@@ -25,6 +25,8 @@ fuzzy_system = DynamicFuzzyFloodWarningSystem()
 
 class CalibrationRequest(BaseModel):
     ground_distance: float = Field(..., description="Distance from sensor to ground (cm)", example=156.59, gt=0)
+    siaga_level: Optional[float] = Field(None, description="Override siaga level (cm). If not provided, defaults to ground_distance + 30", example=186.59, gt=0)
+    banjir_level: Optional[float] = Field(None, description="Override banjir level (cm). If not provided, defaults to ground_distance", example=156.59, gt=0)
 
 class CalibrationResponse(BaseModel):
     success: bool
@@ -32,6 +34,7 @@ class CalibrationResponse(BaseModel):
     calibration_height: float
     siaga_level: float
     banjir_level: float
+    is_overridden: bool
 
 class RiskCalculationRequest(BaseModel):
     current_distance: float = Field(..., description="Distance from sensor to water surface (cm)", example=165.0, gt=0)
@@ -150,7 +153,8 @@ async def root():
             "Real-time risk assessment",
             "Recovery detection (SIAGA/BANJIR → NORMAL)",
             "Automatic recovery notifications",
-            "Guideline-based rate calibration (0.067 cm/min)"
+            "Guideline-based rate calibration (0.067 cm/min)",
+            "Override support for siaga and banjir levels"
         ],
         "endpoints": {
             "calibrate": "/api/calibrate",
@@ -185,18 +189,46 @@ async def calibrate_system(request: CalibrationRequest):
     Calibrate the flood warning system with ground distance measurement
     
     This sets the baseline for all future measurements:
-    - BANJIR level = ground_distance (flood threshold)
-    - SIAGA level = ground_distance + 30cm (warning threshold)
+    - BANJIR level = ground_distance (or override with banjir_level)
+    - SIAGA level = ground_distance + 30cm (or override with siaga_level)
+    
+    **Override Support:**
+    You can now override the default levels:
+    - Provide `siaga_level` to set a custom warning threshold
+    - Provide `banjir_level` to set a custom flood threshold
+    - If not provided, defaults are used (banjir = ground_distance, siaga = ground_distance + 30)
     """
     try:
-        fuzzy_system.calibrate(request.ground_distance)
+        # Validate override values if provided
+        if request.siaga_level is not None and request.banjir_level is not None:
+            if request.siaga_level <= request.banjir_level:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="siaga_level must be greater than banjir_level"
+                )
+        
+        is_overridden = request.siaga_level is not None or request.banjir_level is not None
+        
+        fuzzy_system.calibrate(
+            ground_distance=request.ground_distance,
+            siaga_level_override=request.siaga_level,
+            banjir_level_override=request.banjir_level
+        )
+        
+        message = "System calibrated successfully"
+        if is_overridden:
+            message += " with custom override levels"
+        
         return {
             "success": True,
-            "message": "System calibrated successfully",
+            "message": message,
             "calibration_height": fuzzy_system.calibration_height,
             "siaga_level": fuzzy_system.siaga_level,
-            "banjir_level": fuzzy_system.banjir_level
+            "banjir_level": fuzzy_system.banjir_level,
+            "is_overridden": is_overridden
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Calibration failed: {str(e)}")
 
@@ -484,7 +516,8 @@ async def health_check():
         "features": {
             "average_calculation": "60-second rolling window",
             "rate_unit": "cm/min",
-            "guideline_rate": "0.067 cm/min"
+            "guideline_rate": "0.067 cm/min",
+            "override_support": "siaga and banjir levels can be overridden"
         }
     }
 
@@ -497,6 +530,7 @@ if __name__ == "__main__":
     print("  • Time-to-flood estimation")
     print("  • Recovery detection (SIAGA/BANJIR → NORMAL)")
     print("  • Guideline-based calibration (0.067 cm/min)")
+    print("  • Override support for siaga and banjir levels")
     print("\n📡 Endpoints:")
     print("  • POST /api/calibrate       - Calibrate system")
     print("  • POST /api/calculate-risk  - Calculate flood risk")
