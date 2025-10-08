@@ -22,20 +22,43 @@ class DynamicFuzzyFloodWarningSystem:
 		self.distance_history = deque(maxlen=60)
 		self.timestamp_history = deque(maxlen=60)
 	
-	def calibrate(self, ground_distance):
+	def calibrate(self, ground_distance, siaga_level_override=None, banjir_level_override=None):
 		"""
 		Calibrate the system with current ground distance
 		
 		Parameters:
-		ground_distance: Current distance from sensor to ground (h cm)
+		ground_distance: Current distance from sensor to ground (cm)
+		siaga_level_override: Optional override for siaga level (cm)
+		banjir_level_override: Optional override for banjir level (cm)
+		
+		If overrides are not provided:
+		- banjir_level = ground_distance
+		- siaga_level = ground_distance + 30
 		"""
 		self.calibration_height = ground_distance
-		self.banjir_level = ground_distance
-		self.siaga_level = ground_distance + 30
+		
+		# Use override values if provided, otherwise use defaults
+		if banjir_level_override is not None:
+			self.banjir_level = banjir_level_override
+		else:
+			self.banjir_level = ground_distance
+		
+		if siaga_level_override is not None:
+			self.siaga_level = siaga_level_override
+		else:
+			self.siaga_level = ground_distance + 30
+		
+		# Validate that siaga > banjir
+		if self.siaga_level <= self.banjir_level:
+			raise ValueError("siaga_level must be greater than banjir_level")
 		
 		self.fuzzy_system = self._create_fuzzy_system()
 		
-		print(f"System calibrated: Ground={ground_distance}cm, Siaga={self.siaga_level}cm, Banjir={self.banjir_level}cm")
+		override_msg = ""
+		if siaga_level_override is not None or banjir_level_override is not None:
+			override_msg = " (with overrides)"
+		
+		print(f"System calibrated{override_msg}: Ground={ground_distance}cm, Siaga={self.siaga_level}cm, Banjir={self.banjir_level}cm")
 	
 	def _create_fuzzy_system(self):
 		"""Create the fuzzy logic control system with tuned membership functions"""
@@ -51,15 +74,6 @@ class DynamicFuzzyFloodWarningSystem:
 		water_level_norm['banjir'] = fuzz.trapmf(water_level_norm.universe, [0.8, 0.95, 1.0, 1.0])
 		
 		# TUNED: Rate of change - more granular and realistic
-		# Normalized values: -1.0 = -0.4 cm/min (or faster rising)
-		# Average guideline: 0.067 cm/min = -0.1675 normalized
-		# avg_rate_change['naik sangat cepat'] = fuzz.trapmf(avg_rate_change.universe, [-1, -1, -0.7, -0.45])
-		# avg_rate_change['naik cepat'] = fuzz.trimf(avg_rate_change.universe, [-0.6, -0.35, -0.2])
-		# avg_rate_change['naik lambat'] = fuzz.trimf(avg_rate_change.universe, [-0.3, -0.15, -0.05])
-		# avg_rate_change['stabil'] = fuzz.trimf(avg_rate_change.universe, [-0.08, 0, 0.08])
-		# avg_rate_change['turun lambat'] = fuzz.trimf(avg_rate_change.universe, [0.05, 0.15, 0.3])
-		# avg_rate_change['turun cepat'] = fuzz.trapmf(avg_rate_change.universe, [0.2, 0.45, 1, 1])
-		
 		# Water DROPPING (negative normalized values)
 		avg_rate_change['turun cepat'] = fuzz.trapmf(avg_rate_change.universe, [-1, -1, -0.45, -0.2])
 		avg_rate_change['turun lambat'] = fuzz.trimf(avg_rate_change.universe, [-0.3, -0.15, -0.05])
@@ -350,20 +364,6 @@ class DynamicFuzzyFloodWarningSystem:
 				return "NORMAL"
 	
 	def _determine_avg_rate_category(self, avg_rate_cm_per_min):
-		# """Categorize average rate of change"""
-		# if avg_rate_cm_per_min < -0.28:  # ~-0.7 normalized
-		# 	return "Naik Sangat Cepat"
-		# elif avg_rate_cm_per_min < -0.14:  # ~-0.35 normalized
-		# 	return "Naik Cepat"
-		# elif avg_rate_cm_per_min < -0.05:
-		# 	return "Naik Lambat"
-		# elif avg_rate_cm_per_min < 0.05:
-		# 	return "Stabil"
-		# elif avg_rate_cm_per_min < 0.14:
-		# 	return "Turun Lambat"
-		# else:
-		# 	return "Turun Cepat"
-
 		"""
 		Categorize average rate of change
 		
@@ -565,14 +565,17 @@ class DynamicFuzzyFloodWarningSystem:
 
 if __name__ == "__main__":
 	system = DynamicFuzzyFloodWarningSystem()
-	system.calibrate(100)
+	
+	# Test with default calibration
+	print("\n=== Testing with default calibration ===")
+	system.calibrate(ground_distance=100)
 	
 	print("\n=== Simulating 60-second readings ===")
 	print("Simulating water rising scenario...\n")
 	
 	base_time = datetime.now()
 	
-	distances = [200.0, 201]
+	distances = [200.0, 199.5]
 	
 	for i, distance in enumerate(distances):
 		timestamp = base_time + timedelta(seconds=i*6)
@@ -592,4 +595,27 @@ if __name__ == "__main__":
 		if result['time_to_flood_minutes']:
 			print(f"  Time to Flood: {result['time_to_flood_minutes']} min ({result['time_to_flood_status']})")
 		print(f"  Message: {result['status_message']}")
+		print()
+	
+	# Test with override
+	print("\n" + "="*70)
+	print("=== Testing with override calibration ===")
+	system2 = DynamicFuzzyFloodWarningSystem()
+	system2.calibrate(ground_distance=100, siaga_level_override=150, banjir_level_override=120)
+	
+	print("\n=== Simulating with override ===\n")
+	
+	for i, distance in enumerate(distances):
+		timestamp = base_time + timedelta(seconds=i*6)
+		
+		result = system2.calculate_risk(
+			current_distance=distance,
+			current_rainfall_mm_per_hour=0,
+			timestamp=timestamp
+		)
+		
+		print(f"Reading {i+1} (t={i*6}s):")
+		print(f"  Distance: {result['current_distance']} cm ({result['warning_level']})")
+		print(f"  Thresholds: Banjir={result['thresholds']['banjir']}cm, Siaga={result['thresholds']['siaga']}cm")
+		print(f"  Risk: {result['risk_score']:.1f}% ({result['risk_category']})")
 		print()
