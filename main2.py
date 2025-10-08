@@ -66,7 +66,7 @@ class DynamicFuzzyFloodWarningSystem:
 		water_level_norm = ctrl.Antecedent(np.arange(0, 1.01, 0.01), 'water_level_norm')
 		avg_rate_change = ctrl.Antecedent(np.arange(-1, 1.01, 0.01), 'avg_rate_change')
 		rainfall_norm = ctrl.Antecedent(np.arange(0, 1.01, 0.01), 'rainfall_norm')
-		flood_risk = ctrl.Consequent(np.arange(0, 101, 1), 'flood_risk', defuzzify_method='som')
+		flood_risk = ctrl.Consequent(np.arange(0, 101, 1), 'flood_risk', defuzzify_method='centroid')
 		
 		# TUNED: Water level membership functions - more sensitive
 		water_level_norm['normal'] = fuzz.trapmf(water_level_norm.universe, [0, 0, 0.3, 0.5])
@@ -575,7 +575,7 @@ if __name__ == "__main__":
 	
 	base_time = datetime.now()
 	
-	distances = [200.0, 199.5]
+	distances = [200.0, 199.99, 199.98, 201, 199]
 	
 	for i, distance in enumerate(distances):
 		timestamp = base_time + timedelta(seconds=i*6)
@@ -585,37 +585,3 @@ if __name__ == "__main__":
 			current_rainfall_mm_per_hour=0,
 			timestamp=timestamp
 		)
-		
-		print(f"Reading {i+1} (t={i*6}s):")
-		print(f"  Distance: {result['current_distance']} cm ({result['warning_level']})")
-		print(f"  Avg Rate (60s): {result['avg_rate_change_cm_per_min']:.4f} cm/min ({result['avg_rate_category']})")
-		print(f"  Rainfall: {result['current_rainfall']} mm/hour ({result['current_rainfall_category']})")
-		print(f"  Risk: {result['risk_score']:.1f}% ({result['risk_category']})")
-		print(f"  Should Send Warning: {result['should_send_warning']}")
-		if result['time_to_flood_minutes']:
-			print(f"  Time to Flood: {result['time_to_flood_minutes']} min ({result['time_to_flood_status']})")
-		print(f"  Message: {result['status_message']}")
-		print()
-	
-	# Test with override
-	print("\n" + "="*70)
-	print("=== Testing with override calibration ===")
-	system2 = DynamicFuzzyFloodWarningSystem()
-	system2.calibrate(ground_distance=100, siaga_level_override=150, banjir_level_override=120)
-	
-	print("\n=== Simulating with override ===\n")
-	
-	for i, distance in enumerate(distances):
-		timestamp = base_time + timedelta(seconds=i*6)
-		
-		result = system2.calculate_risk(
-			current_distance=distance,
-			current_rainfall_mm_per_hour=0,
-			timestamp=timestamp
-		)
-		
-		print(f"Reading {i+1} (t={i*6}s):")
-		print(f"  Distance: {result['current_distance']} cm ({result['warning_level']})")
-		print(f"  Thresholds: Banjir={result['thresholds']['banjir']}cm, Siaga={result['thresholds']['siaga']}cm")
-		print(f"  Risk: {result['risk_score']:.1f}% ({result['risk_category']})")
-		print()
