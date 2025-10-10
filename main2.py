@@ -287,11 +287,6 @@ class DynamicFuzzyFloodWarningSystem:
 		print(f"Water level normalized: {water_level_normalized:.4f} ({self._determine_water_level_category(water_level_normalized)})")
 		print(f"Avg rate normalized: {avg_rate_normalized:.4f} ({self._determine_avg_rate_category(avg_rate_normalized)})")
 		print(f"Rainfall normalized: {rainfall_normalized:.4f} ({self._categorize_rainfall_hourly(rainfall_normalized)})")
-		if result['time_to_flood_minutes']:
-			print(f"\n⏰ Time to flood: {result['time_to_flood_status']}")
-		
-		if result['should_send_warning']:
-			print(f"\n📢 WARNING! Send notification every {result['notification_interval']} minutes")
 		
 		# Fuzzy logic computation
 		self.fuzzy_system.input['water_level_norm'] = water_level_normalized
