@@ -9,8 +9,8 @@ from main2 import DynamicFuzzyFloodWarningSystem
 
 app = FastAPI(
     title="Flood Early Warning Fuzzy Logic API",
-    description="API for flood monitoring with 60-second average rate of change and recovery detection",
-    version="3.0.0"
+    description="API for flood monitoring with FIFO queue and dynamic fuzzy categorization",
+    version="4.0.0"
 )
 
 app.add_middleware(
@@ -21,12 +21,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-fuzzy_system = DynamicFuzzyFloodWarningSystem()
+# Initialize system with configurable reading interval
+fuzzy_system = DynamicFuzzyFloodWarningSystem(reading_interval_seconds=1)
 
 class CalibrationRequest(BaseModel):
     ground_distance: float = Field(..., description="Distance from sensor to ground (cm)", example=156.59, gt=0)
     siaga_level: Optional[float] = Field(None, description="Override siaga level (cm). If not provided, defaults to ground_distance + 30", example=186.59, gt=0)
     banjir_level: Optional[float] = Field(None, description="Override banjir level (cm). If not provided, defaults to ground_distance", example=156.59, gt=0)
+    reading_interval_seconds: Optional[int] = Field(1, description="Time interval between readings in seconds", example=1, gt=0)
 
 class CalibrationResponse(BaseModel):
     success: bool
@@ -34,28 +36,26 @@ class CalibrationResponse(BaseModel):
     calibration_height: float
     siaga_level: float
     banjir_level: float
+    reading_interval_seconds: int
     is_overridden: bool
 
 class RiskCalculationRequest(BaseModel):
     current_distance: float = Field(..., description="Distance from sensor to water surface (cm)", example=165.0, gt=0)
     current_rainfall_mm_per_hour: float = Field(default=0, description="Rainfall intensity (mm/hour)", example=12.5, ge=0, le=25)
-    timestamp: Optional[str] = Field(
-        default=None,
-        description="ISO format timestamp (optional, defaults to current time)",
-        example="2025-10-07T10:30:00"
-    )
 
 class RiskCalculationResponse(BaseModel):
+    reading_number: int
     current_distance: float
     water_depth_from_ground: float
-    avg_rate_change_cm_per_min: float = Field(..., description="Average rate of change over last 60 seconds (cm/min)")
-    readings_count: int = Field(..., description="Number of readings used for averaging")
+    avg_rate_change_cm_per_min: float = Field(..., description="Average rate of change over readings (cm/min)")
+    readings_count: int = Field(..., description="Number of readings in FIFO queue")
     water_level_normalized: float
+    water_level_category: str = Field(..., description="Dynamic water level category from fuzzy membership")
     avg_rate_normalized: float
-    avg_rate_category: str = Field(..., description="Categorized rate of change (e.g., Naik Sangat Cepat, Stabil, Turun Cepat)")
+    avg_rate_category: str = Field(..., description="Dynamic rate category from fuzzy membership")
     current_rainfall: float
     rainfall_normalized: float
-    current_rainfall_category: str
+    current_rainfall_category: str = Field(..., description="Dynamic rainfall category from fuzzy membership")
     risk_score: float
     risk_category: str = Field(..., description="Categorized risk level (Rendah, Sedang, Tinggi)")
     warning_level: str
@@ -72,18 +72,16 @@ class RiskCalculationResponse(BaseModel):
 class BatchReadingItem(BaseModel):
     current_distance: float = Field(..., description="Distance from sensor to water surface (cm)", example=165.0, gt=0)
     current_rainfall_mm_per_hour: float = Field(default=0, description="Rainfall intensity (mm/hour)", ge=0, le=25)
-    timestamp: Optional[str] = Field(
-        default=None,
-        description="ISO format timestamp",
-        example="2025-10-07T10:30:00"
-    )
 
 class BatchReadingResult(BaseModel):
     index: int
+    reading_number: int
     current_distance: float
     water_depth_from_ground: float
+    water_level_category: str
     avg_rate_change_cm_per_min: float
-    avg_rate_category: str = Field(..., description="Categorized rate of change")
+    avg_rate_category: str = Field(..., description="Dynamic rate category")
+    rainfall_category: str
     risk_score: float
     risk_category: str = Field(..., description="Categorized risk level")
     warning_level: str
@@ -104,9 +102,10 @@ class SystemStatusResponse(BaseModel):
     calibration_height: Optional[float]
     siaga_level: Optional[float]
     banjir_level: Optional[float]
+    reading_interval_seconds: int
     previous_warning_level: Optional[str] = Field(None, description="Last recorded warning level")
-    readings_count: int = Field(..., description="Number of readings in history")
-    history_size: int = Field(..., description="Maximum history capacity (60 seconds)")
+    readings_count: int = Field(..., description="Number of readings in FIFO queue")
+    history_size: int = Field(60, description="Maximum FIFO queue capacity")
 
 class ThresholdsResponse(BaseModel):
     calibration_height: float
@@ -117,18 +116,19 @@ class ThresholdsResponse(BaseModel):
 
 class SimulationRequest(BaseModel):
     scenario: str = Field(..., description="Scenario type: rising, falling, or stable", example="rising")
-    duration_seconds: int = Field(default=120, description="Duration of simulation in seconds", example=120)
-    interval_seconds: int = Field(default=6, description="Interval between readings in seconds", example=6)
+    num_readings: int = Field(default=20, description="Number of readings to generate", example=20, gt=0, le=100)
     start_distance: float = Field(default=200.0, description="Starting distance in cm", example=200.0)
     rainfall: float = Field(default=12.5, description="Rainfall intensity (mm/hour)", example=12.5)
 
 class SimulationResult(BaseModel):
-    time_seconds: int
-    timestamp: str
+    reading_index: int
+    reading_number: int
     current_distance: float
     water_depth: float
+    water_level_category: str
     avg_rate_change: float
     avg_rate_category: str
+    rainfall_category: str
     risk_score: float
     risk_category: str
     warning_level: str
@@ -145,16 +145,18 @@ class SimulationResponse(BaseModel):
 @app.get("/", tags=["General"])
 async def root():
     return {
-        "message": "Flood Early Warning Fuzzy Logic API v3.0",
-        "description": "3-input fuzzy: Water Level + Average Rate of Change (60s, cm/min) + Rainfall",
+        "message": "Flood Early Warning Fuzzy Logic API v4.0",
+        "description": "3-input fuzzy with FIFO queue and dynamic categorization",
         "features": [
-            "60-second moving average for rate of change calculation",
+            "FIFO queue (up to 60 readings) for rate of change calculation",
+            "Dynamic fuzzy categorization (adapts to membership function changes)",
+            "No timestamps required - automatic FIFO management",
             "Time-to-flood estimation", 
             "Real-time risk assessment",
             "Recovery detection (SIAGA/BANJIR → NORMAL)",
             "Automatic recovery notifications",
-            "Guideline-based rate calibration (0.067 cm/min)",
-            "Override support for siaga and banjir levels"
+            "Override support for siaga and banjir levels",
+            "Configurable reading interval"
         ],
         "endpoints": {
             "calibrate": "/api/calibrate",
@@ -171,13 +173,14 @@ async def root():
 @app.get("/api/status", response_model=SystemStatusResponse, tags=["System"])
 async def get_system_status():
     """
-    Get current system status including calibration, warning levels, and history
+    Get current system status including calibration, warning levels, and FIFO queue status
     """
     return {
         "is_calibrated": fuzzy_system.calibration_height is not None,
         "calibration_height": fuzzy_system.calibration_height,
         "siaga_level": fuzzy_system.siaga_level,
         "banjir_level": fuzzy_system.banjir_level,
+        "reading_interval_seconds": fuzzy_system.reading_interval_seconds,
         "previous_warning_level": fuzzy_system.previous_warning_level,
         "readings_count": len(fuzzy_system.distance_history),
         "history_size": 60
@@ -191,12 +194,22 @@ async def calibrate_system(request: CalibrationRequest):
     This sets the baseline for all future measurements:
     - BANJIR level = ground_distance (or override with banjir_level)
     - SIAGA level = ground_distance + 30cm (or override with siaga_level)
+    - Reading interval = time between readings (default: 1 second)
     
     **Override Support:**
-    You can now override the default levels:
+    You can customize the system:
     - Provide `siaga_level` to set a custom warning threshold
     - Provide `banjir_level` to set a custom flood threshold
-    - If not provided, defaults are used (banjir = ground_distance, siaga = ground_distance + 30)
+    - Provide `reading_interval_seconds` to match your sensor's reading frequency
+    - If not provided, defaults are used
+    
+    **Dynamic Categorization:**
+    The system now uses fuzzy membership functions to dynamically categorize:
+    - Water levels (NORMAL, SIAGA, BANJIR RINGAN, BANJIR PARAH)
+    - Rate of change (Turun Sangat Cepat → Naik Ekstrem)
+    - Rainfall intensity (Tidak Hujan → Hujan Ekstrem)
+    
+    Categories automatically adapt if you modify membership functions!
     """
     try:
         # Validate override values if provided
@@ -208,6 +221,13 @@ async def calibrate_system(request: CalibrationRequest):
                 )
         
         is_overridden = request.siaga_level is not None or request.banjir_level is not None
+        
+        # Reinitialize system with new reading interval if provided
+        global fuzzy_system
+        if request.reading_interval_seconds != fuzzy_system.reading_interval_seconds:
+            fuzzy_system = DynamicFuzzyFloodWarningSystem(
+                reading_interval_seconds=request.reading_interval_seconds
+            )
         
         fuzzy_system.calibrate(
             ground_distance=request.ground_distance,
@@ -225,6 +245,7 @@ async def calibrate_system(request: CalibrationRequest):
             "calibration_height": fuzzy_system.calibration_height,
             "siaga_level": fuzzy_system.siaga_level,
             "banjir_level": fuzzy_system.banjir_level,
+            "reading_interval_seconds": fuzzy_system.reading_interval_seconds,
             "is_overridden": is_overridden
         }
     except HTTPException:
@@ -235,27 +256,35 @@ async def calibrate_system(request: CalibrationRequest):
 @app.post("/api/calculate-risk", response_model=RiskCalculationResponse, tags=["Risk Assessment"])
 async def calculate_flood_risk(request: RiskCalculationRequest):
     """
-    Calculate flood risk using 60-second average rate of change
+    Calculate flood risk using FIFO queue for rate of change calculation
     
     **Inputs:**
     1. Water Level (current_distance): cm from sensor to water surface
-    2. Average Rate of Change: Automatically calculated from last 60 seconds of readings (cm/min)
+    2. Average Rate of Change: Automatically calculated from FIFO queue (cm/min)
        - Negative = water rising (distance decreasing)
        - Positive = water falling (distance increasing)
     3. Current Rainfall (current_rainfall_mm_per_hour): mm/hour (0-25)
     
-    **How it works:**
-    The system maintains a 60-second rolling history of distance readings. When you submit
-    a new reading, it automatically calculates the average rate of change over the available
-    history (up to 60 seconds). This provides a more stable and accurate trend compared to
-    instantaneous measurements.
+    **How FIFO Queue Works:**
+    - System maintains up to 60 readings in a FIFO queue
+    - When you submit a new reading, it's added to the queue
+    - Oldest reading is automatically removed if queue is full
+    - Rate of change calculated from first to last reading in queue
+    - No timestamps needed - system uses configured reading interval
+    
+    **Dynamic Categorization:**
+    All categories are now determined dynamically by finding the fuzzy set
+    with the highest membership degree:
+    - Water Level Category: NORMAL, SIAGA, BANJIR RINGAN, or BANJIR PARAH
+    - Rate Category: 8 levels from "Turun Sangat Cepat" to "Naik Ekstrem"
+    - Rainfall Category: 6 levels from "Tidak Hujan" to "Hujan Ekstrem"
     
     **Outputs:**
     - Risk assessment with warning level (NORMAL, SIAGA, BANJIR)
-    - Average rate of change over last 60 seconds (cm/min)
-    - Categorized rate of change (e.g., Naik Sangat Cepat, Stabil, Turun Cepat)
+    - Dynamic categories based on actual fuzzy membership functions
+    - Average rate of change over available readings
     - Number of readings used for averaging
-    - Risk score and categorized risk level (Rendah, Sedang, Tinggi)
+    - Risk score and categorized risk level
     - Estimated time until flood (for evacuation planning)
     - Recovery detection (when status returns to NORMAL from SIAGA/BANJIR)
     - Detailed status message in Indonesian
@@ -264,27 +293,14 @@ async def calculate_flood_risk(request: RiskCalculationRequest):
     The system automatically detects when conditions improve from SIAGA or BANJIR 
     back to NORMAL, setting `is_recovery=True` and `should_send_recovery_notification=True`
     to enable sending "all clear" notifications to users.
-    
-    **Rate Guideline:**
-    The membership functions are calibrated based on a guideline average rate of 
-    0.0673611 cm/min (approximately 4 cm/hour).
     """
     if fuzzy_system.calibration_height is None:
         raise HTTPException(status_code=400, detail="System not calibrated. Call /api/calibrate first")
     
     try:
-        # Parse timestamp if provided
-        timestamp = None
-        if request.timestamp:
-            try:
-                timestamp = datetime.fromisoformat(request.timestamp.replace('Z', '+00:00'))
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid timestamp format. Use ISO format (YYYY-MM-DDTHH:MM:SS)")
-        
         result = fuzzy_system.calculate_risk(
             current_distance=request.current_distance,
-            current_rainfall_mm_per_hour=request.current_rainfall_mm_per_hour,
-            timestamp=timestamp
+            current_rainfall_mm_per_hour=request.current_rainfall_mm_per_hour
         )
         return result
     except HTTPException:
@@ -302,8 +318,14 @@ async def add_batch_readings(request: BatchReadingsRequest):
     - Batch processing of accumulated readings
     - Simulation and testing scenarios
     
-    The system will process each reading in order and calculate the average rate
-    of change based on the cumulative history.
+    **FIFO Queue Behavior:**
+    - Readings are processed in order
+    - Each reading is added to the FIFO queue
+    - Queue automatically maintains only the last 60 readings
+    - Rate of change calculated based on available history
+    
+    **Dynamic Categories:**
+    All categories in the response are dynamically determined from fuzzy membership functions.
     """
     if fuzzy_system.calibration_height is None:
         raise HTTPException(status_code=400, detail="System not calibrated. Call /api/calibrate first")
@@ -315,30 +337,21 @@ async def add_batch_readings(request: BatchReadingsRequest):
         results = []
         
         for idx, reading in enumerate(request.readings):
-            # Parse timestamp if provided
-            timestamp = None
-            if reading.timestamp:
-                try:
-                    timestamp = datetime.fromisoformat(reading.timestamp.replace('Z', '+00:00'))
-                except ValueError:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Invalid timestamp format in reading at index {idx}"
-                    )
-            
             # Calculate flood risk
             result = fuzzy_system.calculate_risk(
                 current_distance=reading.current_distance,
-                current_rainfall_mm_per_hour=reading.current_rainfall_mm_per_hour,
-                timestamp=timestamp
+                current_rainfall_mm_per_hour=reading.current_rainfall_mm_per_hour
             )
             
             results.append(BatchReadingResult(
                 index=idx,
+                reading_number=result['reading_number'],
                 current_distance=result['current_distance'],
                 water_depth_from_ground=round(result['water_depth_from_ground'], 2),
+                water_level_category=result['water_level_category'],
                 avg_rate_change_cm_per_min=round(result['avg_rate_change_cm_per_min'], 4),
                 avg_rate_category=result['avg_rate_category'],
+                rainfall_category=result['current_rainfall_category'],
                 risk_score=round(result['risk_score'], 1),
                 risk_category=result['risk_category'],
                 warning_level=result['warning_level'],
@@ -377,19 +390,19 @@ async def get_thresholds():
         },
         "notification_intervals": {
             "NORMAL": None,
-            "SIAGA": "10 minutes",
-            "BANJIR": "5 minutes"
+            "SIAGA": "10 minutes (risk ≥75%)",
+            "BANJIR": "5 minutes (risk ≥75%)"
         }
     }
 
 @app.post("/api/reset", tags=["System"])
 async def reset_system():
     """
-    Reset the system history (clears all readings and warning state)
+    Reset the FIFO queue and warning state
     
     This maintains the calibration but clears:
-    - All distance reading history
-    - All timestamp history
+    - All distance readings in FIFO queue
+    - Reading count
     - Previous warning level
     
     Use this when you want to start fresh monitoring without recalibrating.
@@ -398,15 +411,13 @@ async def reset_system():
         raise HTTPException(status_code=400, detail="System not calibrated")
     
     try:
-        # Clear history
-        fuzzy_system.distance_history.clear()
-        fuzzy_system.timestamp_history.clear()
-        fuzzy_system.previous_warning_level = None
+        fuzzy_system.reset_history()
         
         return {
             "success": True, 
             "message": "System history reset successfully. Calibration maintained.",
-            "calibration_maintained": True
+            "calibration_maintained": True,
+            "queue_cleared": True
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
@@ -417,20 +428,27 @@ async def simulate_scenario(request: SimulationRequest):
     Simulate a flood scenario with generated data
     
     **Scenarios:**
-    - `rising`: Water level rising (distance decreasing by 0.3 cm per interval)
-    - `falling`: Water level falling (distance increasing by 0.3 cm per interval)
+    - `rising`: Water level rising (distance decreasing by 0.3 cm per reading)
+    - `falling`: Water level falling (distance increasing by 0.3 cm per reading)
     - `stable`: Water level stable with small random variations (±0.1 cm)
     
     **Parameters:**
-    - `duration_seconds`: Total duration of the simulation
-    - `interval_seconds`: Time between readings (e.g., 6 seconds)
+    - `num_readings`: Number of readings to generate (1-100)
     - `start_distance`: Initial distance from sensor to water
     - `rainfall`: Constant rainfall intensity throughout simulation
+    
+    **FIFO Behavior:**
+    - Each reading is added to the FIFO queue in sequence
+    - Rate of change is calculated from available history
+    - After 60 readings, oldest readings are automatically removed
+    
+    **Dynamic Categories:**
+    All categories shown are dynamically determined from fuzzy membership functions.
     
     This is useful for:
     - Testing the system behavior under different scenarios
     - Training and demonstration purposes
-    - Understanding how the 60-second averaging works
+    - Understanding how the FIFO queue works
     """
     if fuzzy_system.calibration_height is None:
         raise HTTPException(status_code=400, detail="System not calibrated. Call /api/calibrate first")
@@ -443,17 +461,10 @@ async def simulate_scenario(request: SimulationRequest):
     
     try:
         import numpy as np
-        from datetime import timedelta
-        
-        # Generate simulated readings
-        num_readings = request.duration_seconds // request.interval_seconds
-        base_time = datetime.now()
         
         results = []
         
-        for i in range(num_readings):
-            timestamp = base_time + timedelta(seconds=i * request.interval_seconds)
-            
+        for i in range(request.num_readings):
             # Calculate distance based on scenario
             if request.scenario == 'rising':
                 # Water rising (distance decreasing)
@@ -468,17 +479,18 @@ async def simulate_scenario(request: SimulationRequest):
             # Calculate flood risk
             result = fuzzy_system.calculate_risk(
                 current_distance=current_distance,
-                current_rainfall_mm_per_hour=request.rainfall,
-                timestamp=timestamp
+                current_rainfall_mm_per_hour=request.rainfall
             )
             
             results.append(SimulationResult(
-                time_seconds=i * request.interval_seconds,
-                timestamp=timestamp.isoformat(),
+                reading_index=i,
+                reading_number=result['reading_number'],
                 current_distance=round(result['current_distance'], 2),
                 water_depth=round(result['water_depth_from_ground'], 2),
+                water_level_category=result['water_level_category'],
                 avg_rate_change=round(result['avg_rate_change_cm_per_min'], 4),
                 avg_rate_category=result['avg_rate_category'],
+                rainfall_category=result['current_rainfall_category'],
                 risk_score=round(result['risk_score'], 1),
                 risk_category=result['risk_category'],
                 warning_level=result['warning_level'],
@@ -490,10 +502,10 @@ async def simulate_scenario(request: SimulationRequest):
             success=True,
             scenario=request.scenario,
             parameters={
-                "duration_seconds": request.duration_seconds,
-                "interval_seconds": request.interval_seconds,
+                "num_readings": request.num_readings,
                 "start_distance": request.start_distance,
-                "rainfall": request.rainfall
+                "rainfall": request.rainfall,
+                "reading_interval_seconds": fuzzy_system.reading_interval_seconds
             },
             total_readings=len(results),
             results=results
@@ -512,24 +524,28 @@ async def health_check():
     return {
         "status": "healthy",
         "is_calibrated": fuzzy_system.calibration_height is not None,
-        "api_version": "3.0.0",
+        "api_version": "4.0.0",
         "features": {
-            "average_calculation": "60-second rolling window",
+            "queue_type": "FIFO (First In, First Out)",
+            "queue_size": 60,
             "rate_unit": "cm/min",
-            "guideline_rate": "0.067 cm/min",
-            "override_support": "siaga and banjir levels can be overridden"
+            "categorization": "Dynamic (fuzzy membership-based)",
+            "timestamp_required": False,
+            "override_support": "siaga and banjir levels + reading interval"
         }
     }
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("Flood Early Warning Fuzzy Logic API v3.0")
+    print("Flood Early Warning Fuzzy Logic API v4.0")
     print("=" * 70)
     print("\n✨ Features:")
-    print("  • 60-second moving average for rate of change")
+    print("  • FIFO queue (up to 60 readings) for stable rate calculation")
+    print("  • Dynamic categorization based on fuzzy membership functions")
+    print("  • No timestamps required - automatic FIFO management")
     print("  • Time-to-flood estimation")
     print("  • Recovery detection (SIAGA/BANJIR → NORMAL)")
-    print("  • Guideline-based calibration (0.067 cm/min)")
+    print("  • Configurable reading interval")
     print("  • Override support for siaga and banjir levels")
     print("\n📡 Endpoints:")
     print("  • POST /api/calibrate       - Calibrate system")
@@ -537,7 +553,7 @@ if __name__ == "__main__":
     print("  • POST /api/batch-readings  - Process multiple readings")
     print("  • GET  /api/status          - Get system status")
     print("  • GET  /api/thresholds      - Get warning thresholds")
-    print("  • POST /api/reset           - Reset system history")
+    print("  • POST /api/reset           - Reset FIFO queue")
     print("  • POST /api/simulate        - Run simulation")
     print("  • GET  /health              - Health check")
     print("\n🌐 Starting server...")
