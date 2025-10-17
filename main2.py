@@ -1,7 +1,6 @@
 import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
-import matplotlib.pyplot as plt
 from collections import deque
 
 class DynamicFuzzyFloodWarningSystem:
@@ -111,6 +110,13 @@ class DynamicFuzzyFloodWarningSystem:
 	def _define_fuzzy_rules(self, water_level, rate_change, rainfall_norm, flood_risk):
 		"""Improved fuzzy rules with progressive risk increase across all input ranges"""
 		rules = []
+
+		# Add rules that force CRITICAL when rate is extreme regardless of other factors
+		rules.append(ctrl.Rule(rate_change['naik ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], 
+                      flood_risk['critical']))
+		rules.append(ctrl.Rule(rate_change['naik ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(rate_change['naik sangat cepat'] & rainfall_norm['lebat'], flood_risk['critical']))
 		
 		# ========== BANJIR PARAH LEVEL (0.75-1.0 normalized) ==========
 		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['naik ekstrem'], flood_risk['critical']))
@@ -135,7 +141,9 @@ class DynamicFuzzyFloodWarningSystem:
 		# ========== SIAGA LEVEL (0.15-0.65 normalized) ==========
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik ekstrem'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'] & rainfall_norm['ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'] & rainfall_norm['lebat'], 
+                      flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik lambat'], flood_risk['medium']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['stabil'], flood_risk['medium']))
@@ -146,8 +154,8 @@ class DynamicFuzzyFloodWarningSystem:
 		# ========== NORMAL LEVEL (0-0.25 normalized) ==========
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik ekstrem'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'] & rainfall_norm['ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'], flood_risk['medium']))
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik cepat'], flood_risk['medium']))
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik cepat'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik lambat'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['stabil'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['turun lambat'], flood_risk['low']))
@@ -202,24 +210,12 @@ class DynamicFuzzyFloodWarningSystem:
 		
 		return avg_rate
 	
-	def normalize_avg_rate_change(self, avg_rate_cm_per_min, max_rate=30.0):
+	def normalize_avg_rate_change(self, avg_rate_cm_per_min, max_rate=23.0):
 		"""
 		Normalize average rate of change to -1 to +1 scale
-		
-		Important: 
-		- Positive avg_rate_cm_per_min means distance increasing (water dropping)
-		- Negative avg_rate_cm_per_min means distance decreasing (water rising)
-		
-		For fuzzy system:
-		- We want negative normalized values when water is RISING (distance decreasing)
-		- We want positive normalized values when water is DROPPING (distance increasing)
-		
-		Therefore, we INVERT the sign before normalizing
+		BALANCED: max_rate=25 provides middle ground between sensitivity and accuracy
 		"""
-		# INVERT THE SIGN: positive distance change → negative normalized (water dropping)
 		inverted_rate = -avg_rate_cm_per_min
-		
-		# Now clip and normalize
 		clipped_rate = np.clip(inverted_rate, -max_rate, max_rate)
 		return clipped_rate / max_rate
 	
@@ -251,23 +247,11 @@ class DynamicFuzzyFloodWarningSystem:
 		return round(time_minutes, 1), status
 	
 	def calculate_risk(self, current_distance, current_rainfall_mm_per_hour=0):
-		"""
-		Calculate flood risk using FIFO queue for rate of change calculation
-		
-		Parameters:
-		current_distance: Current distance reading (cm)
-		current_rainfall_mm_per_hour: Current rainfall rate (mm/hour)
-		
-		Returns:
-		Dictionary with risk assessment and system status
-		"""
+		"""Calculate flood risk with BALANCED rate-based emergency detection"""
 		if self.calibration_height is None:
 			raise ValueError("System not calibrated. Call calibrate() first.")
 		
-		# Add reading to FIFO queue
 		self.add_distance_reading(current_distance)
-		
-		# Calculate average rate of change
 		avg_rate_cm_per_min = self.calculate_average_rate_change()
 		
 		# Normalize inputs
@@ -275,7 +259,7 @@ class DynamicFuzzyFloodWarningSystem:
 		avg_rate_normalized = self.normalize_avg_rate_change(avg_rate_cm_per_min)
 		rainfall_normalized = self.normalize_rainfall(current_rainfall_mm_per_hour)
 		
-		# DEBUG: Print what's going into the fuzzy system
+		# DEBUG info
 		print(f"\n=== DEBUG INFO ===")
 		print(f"Reading #{self.reading_count}")
 		print(f"Current distance: {current_distance} cm")
@@ -288,6 +272,20 @@ class DynamicFuzzyFloodWarningSystem:
 		print(f"Avg rate normalized: {avg_rate_normalized:.4f} ({self._determine_avg_rate_category(avg_rate_normalized)})")
 		print(f"Rainfall normalized: {rainfall_normalized:.4f} ({self._categorize_rainfall_hourly(rainfall_normalized)})")
 		
+		rate_override_bonus = 0
+
+		if avg_rate_cm_per_min < -20:  # Truly extreme (very rare)
+			rate_override_bonus = 35
+			print(f"⚠️ EXTREME EMERGENCY: Very fast rise ({avg_rate_cm_per_min:.2f} cm/min)")
+		elif avg_rate_cm_per_min < -13:  # Extreme rise
+			rate_override_bonus = 22
+			print(f"⚠️ EMERGENCY: Fast rise detected ({avg_rate_cm_per_min:.2f} cm/min)")
+		elif avg_rate_cm_per_min < -8:  # Fast rise
+			rate_override_bonus = 12
+			print(f"⚠️ WARNING: Rapid rise detected ({avg_rate_cm_per_min:.2f} cm/min)")
+		elif avg_rate_cm_per_min < -5:  # Moderate rise
+			rate_override_bonus = 5  # NEW: Small boost for moderate rises
+		
 		# Fuzzy logic computation
 		self.fuzzy_system.input['water_level_norm'] = water_level_normalized
 		self.fuzzy_system.input['avg_rate_change'] = avg_rate_normalized
@@ -296,14 +294,21 @@ class DynamicFuzzyFloodWarningSystem:
 		try:
 			self.fuzzy_system.compute()
 			risk_score = self.fuzzy_system.output['flood_risk']
+			
+			# Apply rate override bonus
+			risk_score = min(100, risk_score + rate_override_bonus)
+			
+			if rate_override_bonus > 0:
+				print(f"Risk score adjusted: {risk_score - rate_override_bonus:.2f} → {risk_score:.2f}")
 			print(f"Fuzzy computation: SUCCESS")
 			print(f"Risk score: {risk_score:.2f}%")
+			
 		except Exception as e:
 			print(f"Fuzzy computation: FAILED - {e}")
 			# Fallback calculation
 			rate_risk = max(0, -avg_rate_normalized) * 35
 			risk_score = water_level_normalized * 50 + rate_risk + rainfall_normalized * 15
-			risk_score = min(100, risk_score)
+			risk_score = min(100, risk_score + rate_override_bonus)
 			print(f"Using fallback calculation")
 			print(f"  Water component: {water_level_normalized * 50:.2f}")
 			print(f"  Rate component: {rate_risk:.2f}")
@@ -365,23 +370,11 @@ class DynamicFuzzyFloodWarningSystem:
 		return False
 	
 	def _get_fuzzy_category(self, variable_name, normalized_value):
-		"""
-		Dynamically determine category by finding the fuzzy set with highest membership
-		This automatically adapts to any changes in membership function definitions
-		
-		Parameters:
-		variable_name: Name of the fuzzy variable ('water_level_norm', 'avg_rate_change', 'rainfall_norm')
-		normalized_value: The normalized input value
-		
-		Returns:
-		String name of the category with highest membership degree
-		"""
+		"""Dynamically determine category by finding the fuzzy set with highest membership"""
 		if self.fuzzy_system is None:
 			return "Unknown"
 		
-		# Get the fuzzy variable from the control system
 		try:
-			# Access the antecedent from the fuzzy system
 			fuzzy_var = None
 			for rule in self.fuzzy_system.ctrl.rules:
 				for clause in rule.antecedent_terms:
@@ -394,7 +387,6 @@ class DynamicFuzzyFloodWarningSystem:
 			if fuzzy_var is None:
 				return "Unknown"
 			
-			# Calculate membership degree for each fuzzy set
 			max_membership = -1
 			best_category = "Unknown"
 			
@@ -411,13 +403,9 @@ class DynamicFuzzyFloodWarningSystem:
 			return "Unknown"
 	
 	def _categorize_rainfall_hourly(self, rainfall_normalized):
-		"""
-		Dynamically categorize rainfall based on fuzzy membership functions
-		Automatically adapts to membership function changes
-		"""
+		"""Dynamically categorize rainfall based on fuzzy membership functions"""
 		category = self._get_fuzzy_category('rainfall_norm', rainfall_normalized)
 		
-		# Map fuzzy set names to readable Indonesian names
 		category_map = {
 			'tidak_hujan': 'Tidak Hujan',
 			'ringan': 'Hujan Ringan',
@@ -430,13 +418,9 @@ class DynamicFuzzyFloodWarningSystem:
 		return category_map.get(category, category)
 	
 	def _determine_water_level_category(self, water_level_normalized):
-		"""
-		Dynamically categorize water level based on fuzzy membership functions
-		Automatically adapts to membership function changes
-		"""
+		"""Dynamically categorize water level based on fuzzy membership functions"""
 		category = self._get_fuzzy_category('water_level_norm', water_level_normalized)
 		
-		# Map fuzzy set names to readable Indonesian names
 		category_map = {
 			'normal': 'NORMAL',
 			'siaga': 'SIAGA',
@@ -447,32 +431,70 @@ class DynamicFuzzyFloodWarningSystem:
 		return category_map.get(category, category.upper())
 
 	def _determine_warning_level(self, risk_score, current_distance):
-		"""Determine warning level"""
-		if current_distance <= self.banjir_level:
-			return "BANJIR"
+		"""Optimized warning level with better threshold handling"""
+		
+		avg_rate = self.calculate_average_rate_change()
+		
+		# === DISTANCE-BASED FOUNDATION with hysteresis ===
+		# Add 5cm tolerance for BANJIR level to prevent premature downgrade
+		if current_distance <= self.banjir_level + 5:  # Extend BANJIR zone
+			base_level = "BANJIR"
 		elif current_distance <= self.siaga_level:
-			if risk_score >= 75:
-				return "BANJIR"
-			else:
-				return "SIAGA"
+			base_level = "SIAGA"
 		else:
-			if risk_score >= 50:
-				return "SIAGA"
-			else:
+			base_level = "NORMAL"
+		
+		# === PRIORITY 1: Extreme rates (>20 cm/min) anywhere ===
+		if avg_rate < -20:
+			return "BANJIR"
+		
+		# === PRIORITY 2: Already at BANJIR level ===
+		if base_level == "BANJIR":
+			# VERY strict downgrade - flood is serious! Keep BANJIR unless truly recovering
+			# Allow small tolerance: stay BANJIR even if slightly above threshold
+			if current_distance <= self.banjir_level + 5:  # Within 5cm of flood level
+				return "BANJIR"  # Stay BANJIR (includes stable floods just above threshold)
+			if avg_rate > 12 and current_distance > self.banjir_level + 12:
+				return "SIAGA"  # Only if dropping very fast AND well above threshold
+			return "BANJIR"  # Default: stay BANJIR
+		
+		# === PRIORITY 3: At SIAGA level ===
+		if base_level == "SIAGA":
+			# More selective escalation to BANJIR
+			if avg_rate < -15:  # Very fast rise
+				return "BANJIR"
+			if avg_rate < -10 and risk_score >= 90:  # Fast rise + critical risk
+				return "BANJIR"
+			if current_distance <= self.banjir_level + 3 and avg_rate < -5:  # Very close + rising
+				return "BANJIR"
+			
+			# Downgrade only for clear recovery
+			if avg_rate > 10 and risk_score < 35:  # Very fast drop + low risk
 				return "NORMAL"
+			return "SIAGA"
+		
+		# === PRIORITY 4: At NORMAL level ===
+		if base_level == "NORMAL":
+			# Much more conservative escalation from NORMAL
+			if avg_rate < -18:  # Extreme rise only
+				return "BANJIR"
+			
+			# For NORMAL_RISING_FAST scenarios (-15 to -8 cm/min)
+			# Should trigger SIAGA, not BANJIR
+			if avg_rate < -8:  # Fast rise
+				return "SIAGA"  # Go to SIAGA, not BANJIR
+			
+			if risk_score >= 65:  # Elevated risk from other factors
+				return "SIAGA"
+			
+			return "NORMAL"
+		
+		return base_level
 	
 	def _determine_avg_rate_category(self, avg_rate_normalized):
-		"""
-		Dynamically categorize rate of change based on fuzzy membership functions
-		Automatically adapts to membership function changes
-		
-		Remember in normalized form:
-		- Negative normalized = water RISING
-		- Positive normalized = water DROPPING
-		"""
+		"""Dynamically categorize rate of change based on fuzzy membership functions"""
 		category = self._get_fuzzy_category('avg_rate_change', avg_rate_normalized)
 		
-		# Map fuzzy set names to readable Indonesian names
 		category_map = {
 			'turun sangat cepat': 'Turun Sangat Cepat',
 			'turun cepat': 'Turun Cepat',
@@ -583,25 +605,26 @@ class DynamicFuzzyFloodWarningSystem:
 
 
 if __name__ == "__main__":
-	print("=== Dynamic Fuzzy Flood Warning System (FIFO Queue) ===\n")
+	print("=== Dynamic Fuzzy Flood Warning System (BALANCED) ===\n")
 	
 	# Initialize system with 1-second intervals between readings
 	system = DynamicFuzzyFloodWarningSystem(reading_interval_seconds=1)
 	
 	# Calibrate with default settings
 	print("=== Calibration ===")
-	system.calibrate(ground_distance=100)
+	system.calibrate(ground_distance=100, siaga_level_override=130, banjir_level_override=100)
 	
 	print("\n=== Simulating water rising scenario ===")
 	print("Each reading is 1 second apart")
 	print("System stores up to 60 readings (FIFO)\n")
 	
 	# Simulate readings - water rising scenario
-	distances = [150, 149.92, 149.75, 149.5, 149.2, 148.8, 148.3, 147.7, 147.0, 146.2,]
-	rainfall = [0, 0, 0, 5, 5, 10, 15, 20, 20, 15, 10, 5, 5, 0, 0]
+	distances = [150, 149.92, 149.75, 149.5, 149.2, 148.8, 148.3, 147.7, 147.0, 146.2]
+	rainfall = [0, 0, 0, 5, 5, 10, 15, 20, 20, 15]
 	
 	for i, distance in enumerate(distances):
 		result = system.calculate_risk(
 			current_distance=distance,
 			current_rainfall_mm_per_hour=rainfall[i]
 		)
+		print(f"Warning: {result['warning_level']} | Risk: {result['risk_score']:.1f}% | {result['status_message']}\n")
