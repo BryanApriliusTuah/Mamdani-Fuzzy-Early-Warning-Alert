@@ -75,8 +75,8 @@ class DynamicFuzzyFloodWarningSystem:
 		# IMPROVED: 4-level system with progressive BANJIR zones
 		water_level_norm['normal'] = fuzz.trapmf(water_level_norm.universe, [0, 0, 0.1, 0.25])
 		water_level_norm['siaga'] = fuzz.trimf(water_level_norm.universe, [0.15, 0.4, 0.65])
-		water_level_norm['banjir_ringan'] = fuzz.trimf(water_level_norm.universe, [0.5, 0.7, 0.85])
-		water_level_norm['banjir_parah'] = fuzz.trapmf(water_level_norm.universe, [0.75, 0.9, 1.0, 1.0])
+		water_level_norm['siaga II'] = fuzz.trimf(water_level_norm.universe, [0.5, 0.7, 0.85])
+		water_level_norm['banjir'] = fuzz.trapmf(water_level_norm.universe, [0.75, 0.9, 1.0, 1.0])
 		
 		# IMPROVED: 8-level rate of change with better granularity at extremes
 		avg_rate_change['turun sangat cepat'] = fuzz.trapmf(avg_rate_change.universe, [-1, -1, -0.6, -0.4])
@@ -92,9 +92,8 @@ class DynamicFuzzyFloodWarningSystem:
 		rainfall_norm['tidak_hujan'] = fuzz.trapmf(rainfall_norm.universe, [0, 0, 0.02, 0.04])
 		rainfall_norm['ringan'] = fuzz.trimf(rainfall_norm.universe, [0.02, 0.1, 0.2])
 		rainfall_norm['sedang'] = fuzz.trimf(rainfall_norm.universe, [0.15, 0.3, 0.45])
-		rainfall_norm['lebat'] = fuzz.trimf(rainfall_norm.universe, [0.35, 0.55, 0.7])
-		rainfall_norm['sangat_lebat'] = fuzz.trimf(rainfall_norm.universe, [0.6, 0.75, 0.88])
-		rainfall_norm['ekstrem'] = fuzz.trapmf(rainfall_norm.universe, [0.8, 0.92, 1.0, 1.0])
+		rainfall_norm['lebat'] = fuzz.trimf(rainfall_norm.universe, [0.35, 0.65, 0.8])
+		rainfall_norm['sangat_lebat'] = fuzz.trapmf(rainfall_norm.universe, [0.75, 0.9, 1, 1])
 		
 		# IMPROVED: More granular risk output with 4 levels
 		flood_risk['low'] = fuzz.trapmf(flood_risk.universe, [0, 0, 15, 30])
@@ -119,28 +118,28 @@ class DynamicFuzzyFloodWarningSystem:
 		rules.append(ctrl.Rule(rate_change['naik sangat cepat'] & rainfall_norm['lebat'], flood_risk['critical']))
 		
 		# ========== BANJIR PARAH LEVEL (0.75-1.0 normalized) ==========
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['naik ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['naik sangat cepat'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['naik cepat'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['naik lambat'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['stabil'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['turun lambat'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['turun cepat'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['banjir_parah'] & rate_change['turun sangat cepat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['naik ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['naik sangat cepat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['naik cepat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['naik lambat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['stabil'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['turun lambat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['turun cepat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['turun sangat cepat'], flood_risk['high']))
 		
-		# ========== BANJIR RINGAN LEVEL (0.5-0.85 normalized) ==========
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['naik ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['naik sangat cepat'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['naik cepat'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['naik lambat'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['stabil'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['turun lambat'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['turun cepat'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['banjir_ringan'] & rate_change['turun sangat cepat'], flood_risk['medium']))
+		# ========== SIAGA II LEVEL (0.5-0.85 normalized) ==========
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik sangat cepat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik cepat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik lambat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['stabil'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['turun lambat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['turun cepat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['turun sangat cepat'], flood_risk['medium']))
 		
 		# ========== SIAGA LEVEL (0.15-0.65 normalized) ==========
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'] & rainfall_norm['ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'] & rainfall_norm['lebat'], 
                       flood_risk['critical']))
@@ -153,7 +152,7 @@ class DynamicFuzzyFloodWarningSystem:
 		
 		# ========== NORMAL LEVEL (0-0.25 normalized) ==========
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'] & rainfall_norm['ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik cepat'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik lambat'], flood_risk['low']))
@@ -412,7 +411,6 @@ class DynamicFuzzyFloodWarningSystem:
 			'sedang': 'Hujan Sedang',
 			'lebat': 'Hujan Lebat',
 			'sangat_lebat': 'Hujan Sangat Lebat',
-			'ekstrem': 'Hujan Ekstrem'
 		}
 		
 		return category_map.get(category, category)
@@ -424,8 +422,8 @@ class DynamicFuzzyFloodWarningSystem:
 		category_map = {
 			'normal': 'NORMAL',
 			'siaga': 'SIAGA',
-			'banjir_ringan': 'BANJIR RINGAN',
-			'banjir_parah': 'BANJIR PARAH'
+			'siaga II': 'SIAGA II',
+			'banjir': 'BANJIR'
 		}
 		
 		return category_map.get(category, category.upper())
