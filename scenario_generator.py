@@ -6,25 +6,22 @@ class FloodScenarioGenerator:
         self.ground, self.siaga, self.banjir = ground_distance, siaga_level, banjir_level
         
     def generate_scenario(self, stype):
-        # SKENARIO BANJIR
         scenarios = {
-            "Banjir_Kilat": (self.banjir-15, self.banjir+5, -25, -15, 18, 30, True),
-            "Banjir_Musim": (self.banjir-10, self.banjir+3, -18, -10, 15, 25, True),
-            "Banjir_Lambat": (self.banjir-8, self.banjir+2, -12, -6, 10, 20, True),
-            "Banjir_Bendungan": (self.banjir-12, self.banjir+2, -22, -12, 5, 15, True),
-            "Banjir_Pasang": (self.banjir-8, self.banjir+3, -15, -8, 8, 18, True),
-            "Banjir_Sangat_Lambat": (self.banjir-5, self.banjir+5, -5, -2, 3, 10, True),
-            "Banjir_Rembesan": (self.banjir-8, self.banjir+2, -8, -3, 0, 8, True),
-            "Banjir_Tertunda": (self.banjir-6, self.banjir+3, -10, -5, 2, 8, True),
-            # SKENARIO AMAN
-            "Normal_Kering": (self.siaga+15, self.siaga+60, -1, 1, 0, 2, False),
-            "Hujan_Ringan": (self.siaga+10, self.siaga+40, -3, 2, 2, 8, False),
+            # SKENARIO BANJIR (4 jenis)
+            "Banjir_Bandang": (self.banjir-15, self.banjir+5, -25, -15, 18, 30, True),
+            "Banjir_Luapan": (self.banjir-10, self.banjir+3, -18, -10, 15, 25, True),
+            "Banjir_Rob": (self.banjir-8, self.banjir+3, -15, -8, 8, 18, True),
+            "Banjir_Genangan": (self.banjir-8, self.banjir+2, -12, -6, 10, 20, True),
+            
+            # SKENARIO AMAN (8 jenis - diperbaiki)
+            "Cuaca_Cerah": (self.siaga+15, self.siaga+60, -1, 1, 0, 2, False),
+            "Gerimis": (self.siaga+10, self.siaga+40, -3, 2, 2, 8, False),
             "Hujan_Sebentar": (self.siaga+8, self.siaga+35, -4, 3, 5, 15, False),
-            "Air_Surut": (self.siaga+5, self.siaga+50, 3, 15, 0, 5, False),
-            "Stabil_Rendah": (self.siaga+5, self.siaga+30, -2, 2, 0, 5, False),
-            "Hujan_Lebat_Aman": (self.siaga-5, self.siaga+10, -8, -4, 15, 25, False),
-            "Gangguan_Sensor": (self.siaga+5, self.siaga+25, -5, 5, 3, 12, False),
-            "Mendekati_Ambang": (self.siaga-10, self.siaga+5, -6, 1, 5, 15, False),
+            "Pasca_Hujan": (self.siaga+5, self.siaga+50, 3, 15, 0, 5, False),
+            "Air_Tenang": (self.siaga+5, self.siaga+30, -2, 2, 0, 5, False),
+            "Hujan_Terserap": (self.siaga-5, self.siaga+10, -8, -4, 15, 25, False),
+            "Pasang_Normal": (self.siaga+5, self.siaga+25, -5, 5, 3, 12, False),
+            "Hampir_Siaga": (self.siaga-10, self.siaga+5, -6, 1, 5, 15, False),
         }
         
         if stype in scenarios:
@@ -43,12 +40,21 @@ class FloodScenarioGenerator:
     
     def generate_dataset(self, n=1200):
         tipe = [
-            ("Banjir_Kilat", 0.15), ("Banjir_Musim", 0.12), ("Banjir_Lambat", 0.08),
-            ("Banjir_Bendungan", 0.06), ("Banjir_Pasang", 0.05), ("Banjir_Sangat_Lambat", 0.03),
-            ("Banjir_Rembesan", 0.02), ("Banjir_Tertunda", 0.02),
-            ("Normal_Kering", 0.15), ("Hujan_Ringan", 0.12), ("Hujan_Sebentar", 0.08),
-            ("Air_Surut", 0.05), ("Stabil_Rendah", 0.05), ("Hujan_Lebat_Aman", 0.04),
-            ("Gangguan_Sensor", 0.03), ("Mendekati_Ambang", 0.03)
+            # Skenario Banjir (53%)
+            ("Banjir_Bandang", 0.106),    # 127 data
+            ("Banjir_Luapan", 0.212),     # 254 data
+            ("Banjir_Rob", 0.106),        # 127 data
+            ("Banjir_Genangan", 0.106),   # 127 data
+            
+            # Skenario Aman (47%)
+            ("Cuaca_Cerah", 0.15),        # 180 data
+            ("Gerimis", 0.10),            # 120 data
+            ("Hujan_Sebentar", 0.07),     # 84 data
+            ("Pasca_Hujan", 0.05),        # 60 data
+            ("Air_Tenang", 0.05),         # 60 data
+            ("Hujan_Terserap", 0.04),     # 48 data
+            ("Pasang_Normal", 0.03),      # 36 data
+            ("Hampir_Siaga", 0.03),       # 36 data
         ]
         
         data = []
@@ -60,7 +66,7 @@ class FloodScenarioGenerator:
         
         # Lengkapi sampai jumlah total
         while len(data) < n:
-            scenario = self.generate_scenario("Normal_Kering")
+            scenario = self.generate_scenario("Cuaca_Cerah")
             scenario['id_skenario'] = len(data) + 1
             data.append(scenario)
         
