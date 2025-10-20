@@ -86,21 +86,21 @@ class DynamicFuzzyFloodWarningSystem:
 		
 		# HEAVILY TUNED: Much more conservative siaga rules
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['high']))  # Downgraded
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'], flood_risk['medium']))  # Downgraded
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'] & rainfall_norm['lebat'], flood_risk['medium']))  # Downgraded
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'], flood_risk['low']))  # Downgraded
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik lambat'], flood_risk['low']))  # Downgraded
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['stabil'], flood_risk['low']))  # Downgraded
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'], flood_risk['medium']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'] & rainfall_norm['lebat'], flood_risk['medium']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik lambat'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['stabil'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['turun lambat'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['turun cepat'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['turun sangat cepat'], flood_risk['low']))
 		
 		# HEAVILY TUNED: Much more conservative normal rules
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik ekstrem'], flood_risk['high']))  # Downgraded from critical
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['high']))  # Downgraded
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'], flood_risk['low']))  # Downgraded
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik cepat'], flood_risk['low']))  # Downgraded
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik ekstrem'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik cepat'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik lambat'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['stabil'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['turun lambat'], flood_risk['low']))
@@ -144,6 +144,39 @@ class DynamicFuzzyFloodWarningSystem:
 	def normalize_rainfall(self, rainfall_mm_per_hour, max_rainfall=25):
 		return np.clip(rainfall_mm_per_hour / max_rainfall, 0, 1)
 	
+	def get_status_message(self, warning_level, risk_score, avg_rate_cm_per_min):
+		"""Generate status message based on warning level and conditions"""
+		
+		if warning_level == "BANJIR":
+			if risk_score >= 95:
+				return "🚨 CRITICAL FLOOD EMERGENCY! Immediate evacuation required!"
+			elif avg_rate_cm_per_min < -150:
+				return "🚨 EXTREME FLOOD - Water rising extremely fast!"
+			elif risk_score >= 85:
+				return "⚠️ SEVERE FLOOD WARNING - High water levels detected!"
+			else:
+				return "⚠️ FLOOD WARNING - Water has reached critical level!"
+		
+		elif warning_level == "SIAGA":
+			if avg_rate_cm_per_min < -120:
+				return "⚠️ ALERT - Water rising rapidly!"
+			elif risk_score >= 75:
+				return "⚠️ HIGH ALERT - Elevated water levels with high risk!"
+			elif risk_score >= 50:
+				return "⚡ STANDBY ALERT - Water level elevated!"
+			else:
+				return "⚡ CAUTION - Water level approaching alert threshold!"
+		
+		else:  # NORMAL
+			if risk_score >= 85:
+				return "⚡ WARNING - Risk elevated despite normal water level!"
+			elif risk_score >= 50:
+				return "ℹ️ MONITORING - Elevated risk factors detected!"
+			elif avg_rate_cm_per_min < -50:
+				return "ℹ️ WATCH - Water level rising steadily!"
+			else:
+				return "✅ NORMAL - Water level safe!"
+	
 	def calculate_risk(self, current_distance, current_rainfall_mm_per_hour=0):
 		if self.calibration_height is None:
 			raise ValueError("System not calibrated")
@@ -161,7 +194,6 @@ class DynamicFuzzyFloodWarningSystem:
 			rate_override_bonus = 25
 		elif avg_rate_cm_per_min < -100:  # Very fast rise (1.7cm in 1 sec)
 			rate_override_bonus = 12
-		# Normal fluctuations (-60 to -90) get NO bonus
 		
 		self.fuzzy_system.input['water_level_norm'] = water_level_normalized
 		self.fuzzy_system.input['avg_rate_change'] = avg_rate_normalized
@@ -178,6 +210,9 @@ class DynamicFuzzyFloodWarningSystem:
 		old_warning_level = self.previous_warning_level
 		self.previous_warning_level = warning_level
 		
+		# Get status message
+		status_message = self.get_status_message(warning_level, risk_score, avg_rate_cm_per_min)
+		
 		return {
 			'reading_number': self.reading_count,
 			'current_distance': current_distance,
@@ -187,7 +222,8 @@ class DynamicFuzzyFloodWarningSystem:
 			'rainfall_normalized': rainfall_normalized,
 			'risk_score': risk_score,
 			'warning_level': warning_level,
-			'previous_warning_level': old_warning_level
+			'previous_warning_level': old_warning_level,
+			'status_message': status_message
 		}
 	
 	def _determine_warning_level(self, risk_score, current_distance):
@@ -247,6 +283,7 @@ if __name__ == "__main__":
 	distances = [150, 149.92, 149.75, 149.5, 149.2, 148.8, 148.3, 147.7, 147.0, 146.2]
 	rainfall = [0, 0, 0, 5, 5, 10, 15, 20, 20, 15]
 	
+	print("=" * 80)
 	for distance, rain in zip(distances, rainfall):
 		result = system.calculate_risk(distance, rain)
-		print(f"Warning: {result['warning_level']} | Risk: {result['risk_score']:.1f}%")
+		print(f"Warning: {result['warning_level']} | Risk: {result['risk_score']:.1f}% | Status: {result['status_message']}")

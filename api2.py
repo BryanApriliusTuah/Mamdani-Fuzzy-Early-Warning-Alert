@@ -65,7 +65,7 @@ async def calculate_risk(request: RiskRequest):
         )
         
         # Calculate additional fields
-        water_depth = fuzzy_system.calibration_height - request.current_distance
+        water_depth = request.current_distance - fuzzy_system.calibration_height
         
         # Determine risk category
         risk_score = result['risk_score']
@@ -103,6 +103,7 @@ async def calculate_risk(request: RiskRequest):
             "risk_category": risk_category,
             "warning_level": result['warning_level'],
             "previous_warning_level": result['previous_warning_level'],
+			"status_mesage": result['status_message'],
             "is_recovery": is_recovery,
             "time_to_flood_minutes": time_to_flood
         }
