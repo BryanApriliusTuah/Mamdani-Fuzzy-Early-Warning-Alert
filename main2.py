@@ -26,46 +26,77 @@ class DynamicFuzzyFloodWarningSystem:
 		print(f"Calibrated: Ground={ground_distance}cm, Siaga={self.siaga_level}cm, Banjir={self.banjir_level}cm")
 	
 	def _create_fuzzy_system(self):
-		water_level_norm = ctrl.Antecedent(np.arange(0, 1.01, 0.01), 'water_level_norm')
-		avg_rate_change = ctrl.Antecedent(np.arange(-1, 1.01, 0.01), 'avg_rate_change')
-		rainfall_norm = ctrl.Antecedent(np.arange(0, 1.01, 0.01), 'rainfall_norm')
+		# Water level uses actual distance in cm
+		# Range should cover from well above siaga to well below banjir
+		max_distance = self.siaga_level + 50  # Extra range above siaga
+		min_distance = max(0, self.banjir_level - 50)  # Extra range below banjir
+		
+		water_level = ctrl.Antecedent(np.arange(min_distance, max_distance + 1, 1), 'water_level')
+		
+		# Avg rate change in cm/min (negative = water rising, positive = water falling)
+		avg_rate_change = ctrl.Antecedent(np.arange(-200, 201, 1), 'avg_rate_change')
+		
+		# Rainfall in mm/hour (actual values)
+		rainfall = ctrl.Antecedent(np.arange(0, 101, 1), 'rainfall')
+		
 		flood_risk = ctrl.Consequent(np.arange(0, 101, 1), 'flood_risk', defuzzify_method='centroid')
 		
-		# HEAVILY TUNED: Much more conservative boundaries
-		water_level_norm['normal'] = fuzz.trapmf(water_level_norm.universe, [0, 0, 0.25, 0.5])
-		water_level_norm['siaga'] = fuzz.trimf(water_level_norm.universe, [0.4, 0.6, 0.75])
-		water_level_norm['siaga II'] = fuzz.trimf(water_level_norm.universe, [0.65, 0.8, 0.9])
-		water_level_norm['banjir'] = fuzz.trapmf(water_level_norm.universe, [0.85, 0.95, 1.0, 1.0])
+		# Define water level membership functions based on actual distances
+		range_span = self.siaga_level - self.banjir_level
+		mid_point = (self.siaga_level + self.banjir_level) / 2
+		quarter_span = range_span / 4
 		
-		avg_rate_change['turun sangat cepat'] = fuzz.trapmf(avg_rate_change.universe, [-1, -1, -0.6, -0.4])
-		avg_rate_change['turun cepat'] = fuzz.trimf(avg_rate_change.universe, [-0.5, -0.3, -0.15])
-		avg_rate_change['turun lambat'] = fuzz.trimf(avg_rate_change.universe, [-0.2, -0.1, -0.03])
-		avg_rate_change['stabil'] = fuzz.trimf(avg_rate_change.universe, [-0.05, 0, 0.05])
-		avg_rate_change['naik lambat'] = fuzz.trimf(avg_rate_change.universe, [0.03, 0.1, 0.2])
-		avg_rate_change['naik cepat'] = fuzz.trimf(avg_rate_change.universe, [0.15, 0.3, 0.5])
-		avg_rate_change['naik sangat cepat'] = fuzz.trimf(avg_rate_change.universe, [0.4, 0.65, 0.85])
-		avg_rate_change['naik ekstrem'] = fuzz.trapmf(avg_rate_change.universe, [0.75, 0.9, 1, 1])
+		# Normal: above siaga_level
+		water_level['normal'] = fuzz.trapmf(water_level.universe, 
+			[self.siaga_level, self.siaga_level + 10, max_distance, max_distance])
 		
-		rainfall_norm['tidak_hujan'] = fuzz.trapmf(rainfall_norm.universe, [0, 0, 0.02, 0.04])
-		rainfall_norm['ringan'] = fuzz.trimf(rainfall_norm.universe, [0.02, 0.1, 0.2])
-		rainfall_norm['sedang'] = fuzz.trimf(rainfall_norm.universe, [0.15, 0.3, 0.45])
-		rainfall_norm['lebat'] = fuzz.trimf(rainfall_norm.universe, [0.35, 0.65, 0.8])
-		rainfall_norm['sangat_lebat'] = fuzz.trapmf(rainfall_norm.universe, [0.75, 0.9, 1, 1])
+		# Siaga I: upper part of the range between banjir and siaga (overlapping)
+		water_level['siaga I'] = fuzz.trimf(water_level.universe, 
+			[self.banjir_level + quarter_span, mid_point + quarter_span/2, self.siaga_level + 5])
 		
+		# Siaga II: middle-lower part of the range (overlapping with Siaga I)
+		water_level['siaga II'] = fuzz.trimf(water_level.universe, 
+			[self.banjir_level, mid_point, mid_point + quarter_span])
+		
+		# Banjir: below banjir_level
+		water_level['banjir'] = fuzz.trapmf(water_level.universe, 
+			[min_distance, min_distance, self.banjir_level, self.banjir_level + 5])
+		
+		# Rate of change in cm/min (negative = rising water)
+		avg_rate_change['turun sangat cepat'] = fuzz.trapmf(avg_rate_change.universe, [100, 120, 200, 200])
+		avg_rate_change['turun cepat'] = fuzz.trimf(avg_rate_change.universe, [50, 80, 110])
+		avg_rate_change['turun lambat'] = fuzz.trimf(avg_rate_change.universe, [10, 30, 60])
+		avg_rate_change['stabil'] = fuzz.trimf(avg_rate_change.universe, [-15, 0, 15])
+		avg_rate_change['naik lambat'] = fuzz.trimf(avg_rate_change.universe, [-60, -30, -10])
+		avg_rate_change['naik cepat'] = fuzz.trimf(avg_rate_change.universe, [-110, -80, -50])
+		avg_rate_change['naik sangat cepat'] = fuzz.trimf(avg_rate_change.universe, [-150, -120, -90])
+		avg_rate_change['naik ekstrem'] = fuzz.trapmf(avg_rate_change.universe, [-200, -200, -140, -110])
+		
+		# Rainfall in mm/hour (actual values)
+		rainfall['tidak_hujan'] = fuzz.trapmf(rainfall.universe, [0, 0, 0.5, 1])
+		rainfall['ringan'] = fuzz.trimf(rainfall.universe, [0.5, 5, 10])
+		rainfall['sedang'] = fuzz.trimf(rainfall.universe, [8, 15, 25])
+		rainfall['lebat'] = fuzz.trimf(rainfall.universe, [20, 40, 60])
+		rainfall['sangat_lebat'] = fuzz.trapmf(rainfall.universe, [55, 75, 100, 100])
+		
+		# Flood risk output
 		flood_risk['low'] = fuzz.trapmf(flood_risk.universe, [0, 0, 15, 30])
 		flood_risk['medium'] = fuzz.trimf(flood_risk.universe, [25, 45, 65])
 		flood_risk['high'] = fuzz.trimf(flood_risk.universe, [60, 75, 88])
 		flood_risk['critical'] = fuzz.trapmf(flood_risk.universe, [85, 92, 100, 100])
 		
-		rules = self._define_fuzzy_rules(water_level_norm, avg_rate_change, rainfall_norm, flood_risk)
+		rules = self._define_fuzzy_rules(water_level, avg_rate_change, rainfall, flood_risk)
 		return ctrl.ControlSystemSimulation(ctrl.ControlSystem(rules))
 	
-	def _define_fuzzy_rules(self, water_level, rate_change, rainfall_norm, flood_risk):
+	def _define_fuzzy_rules(self, water_level, rate_change, rainfall, flood_risk):
 		rules = []
-		rules.append(ctrl.Rule(rate_change['naik ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['critical']))
-		rules.append(ctrl.Rule(rate_change['naik sangat cepat'] & rainfall_norm['lebat'], flood_risk['critical']))
 		
+		# Extreme rate rules
+		rules.append(ctrl.Rule(rate_change['naik ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(rate_change['naik sangat cepat'] & rainfall['sangat_lebat'], flood_risk['critical']))
+		rules.append(ctrl.Rule(rate_change['naik sangat cepat'] & rainfall['lebat'], flood_risk['critical']))
+		
+		# Banjir level rules (below banjir_level)
 		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['naik ekstrem'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['naik sangat cepat'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['naik cepat'], flood_risk['critical']))
@@ -75,30 +106,31 @@ class DynamicFuzzyFloodWarningSystem:
 		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['turun cepat'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['banjir'] & rate_change['turun sangat cepat'], flood_risk['high']))
 		
+		# Siaga II rules (lower part of range)
 		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik ekstrem'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik sangat cepat'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik cepat'], flood_risk['critical']))
 		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['naik lambat'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['stabil'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['turun lambat'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['turun cepat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['turun cepat'], flood_risk['medium']))
 		rules.append(ctrl.Rule(water_level['siaga II'] & rate_change['turun sangat cepat'], flood_risk['medium']))
 		
-		# HEAVILY TUNED: Much more conservative siaga rules
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik ekstrem'], flood_risk['critical']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik sangat cepat'], flood_risk['medium']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'] & rainfall_norm['lebat'], flood_risk['medium']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik cepat'], flood_risk['low']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['naik lambat'], flood_risk['low']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['stabil'], flood_risk['low']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['turun lambat'], flood_risk['low']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['turun cepat'], flood_risk['low']))
-		rules.append(ctrl.Rule(water_level['siaga'] & rate_change['turun sangat cepat'], flood_risk['low']))
+		# Siaga I rules (upper part of range)
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['naik ekstrem'], flood_risk['critical']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['naik sangat cepat'] & rainfall['sangat_lebat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['naik sangat cepat'], flood_risk['medium']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['naik cepat'] & rainfall['lebat'], flood_risk['medium']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['naik cepat'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['naik lambat'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['stabil'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['turun lambat'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['turun cepat'], flood_risk['low']))
+		rules.append(ctrl.Rule(water_level['siaga I'] & rate_change['turun sangat cepat'], flood_risk['low']))
 		
-		# HEAVILY TUNED: Much more conservative normal rules
+		# Normal rules (above siaga_level)
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik ekstrem'], flood_risk['high']))
-		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'] & rainfall_norm['sangat_lebat'], flood_risk['high']))
+		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'] & rainfall['sangat_lebat'], flood_risk['high']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik sangat cepat'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik cepat'], flood_risk['low']))
 		rules.append(ctrl.Rule(water_level['normal'] & rate_change['naik lambat'], flood_risk['low']))
@@ -109,20 +141,12 @@ class DynamicFuzzyFloodWarningSystem:
 		
 		return rules
 	
-	def normalize_water_level(self, current_distance):
-		if current_distance >= self.siaga_level:
-			return 0.0
-		elif current_distance <= self.banjir_level:
-			return 1.0
-		else:
-			total_range = self.siaga_level - self.banjir_level
-			return 1.0 - ((current_distance - self.banjir_level) / total_range)
-	
 	def add_distance_reading(self, distance):
 		self.distance_history.append(distance)
 		self.reading_count += 1
 	
 	def calculate_average_rate_change(self):
+		"""Calculate rate of change in cm/min (negative = water rising)"""
 		if len(self.distance_history) < 2:
 			return 0.0
 		
@@ -132,17 +156,10 @@ class DynamicFuzzyFloodWarningSystem:
 		if time_span_seconds < 1:
 			return 0.0
 		
+		# Distance change (negative = water level rising)
 		distance_change = self.distance_history[-1] - self.distance_history[0]
 		time_span_minutes = time_span_seconds / 60.0
 		return distance_change / time_span_minutes
-	
-	def normalize_avg_rate_change(self, avg_rate_cm_per_min, max_rate=23.0):
-		inverted_rate = -avg_rate_cm_per_min
-		clipped_rate = np.clip(inverted_rate, -max_rate, max_rate)
-		return clipped_rate / max_rate
-	
-	def normalize_rainfall(self, rainfall_mm_per_hour, max_rainfall=25):
-		return np.clip(rainfall_mm_per_hour / max_rainfall, 0, 1)
 	
 	def get_status_message(self, warning_level, risk_score, avg_rate_cm_per_min):
 		"""Generate status message based on warning level and conditions"""
@@ -184,42 +201,45 @@ class DynamicFuzzyFloodWarningSystem:
 		self.add_distance_reading(current_distance)
 		avg_rate_cm_per_min = self.calculate_average_rate_change()
 		
-		water_level_normalized = self.normalize_water_level(current_distance)
-		avg_rate_normalized = self.normalize_avg_rate_change(avg_rate_cm_per_min)
-		rainfall_normalized = self.normalize_rainfall(current_rainfall_mm_per_hour)
-		
-		# FIXED: Rate thresholds matched to 1-second reading interval
+		# Rate override bonus for extreme situations
 		rate_override_bonus = 0
-		if avg_rate_cm_per_min < -150:  # True extreme emergency (2.5cm in 1 sec)
+		if avg_rate_cm_per_min < -150:  # Extreme rise
 			rate_override_bonus = 25
-		elif avg_rate_cm_per_min < -100:  # Very fast rise (1.7cm in 1 sec)
+		elif avg_rate_cm_per_min < -100:  # Very fast rise
 			rate_override_bonus = 12
 		
-		self.fuzzy_system.input['water_level_norm'] = water_level_normalized
-		self.fuzzy_system.input['avg_rate_change'] = avg_rate_normalized
-		self.fuzzy_system.input['rainfall_norm'] = rainfall_normalized
+		# Use crisp values directly
+		self.fuzzy_system.input['water_level'] = current_distance
+		self.fuzzy_system.input['avg_rate_change'] = avg_rate_cm_per_min
+		self.fuzzy_system.input['rainfall'] = current_rainfall_mm_per_hour
 		
 		try:
 			self.fuzzy_system.compute()
 			risk_score = min(100, self.fuzzy_system.output['flood_risk'] + rate_override_bonus)
 		except:
-			rate_risk = max(0, -avg_rate_normalized) * 35
-			risk_score = min(100, water_level_normalized * 50 + rate_risk + rainfall_normalized * 15 + rate_override_bonus)
+			# Fallback calculation
+			distance_risk = 0
+			if current_distance <= self.banjir_level:
+				distance_risk = 50
+			elif current_distance <= self.siaga_level:
+				normalized_pos = (self.siaga_level - current_distance) / (self.siaga_level - self.banjir_level)
+				distance_risk = 25 + (normalized_pos * 25)
+			
+			rate_risk = max(0, min(35, -avg_rate_cm_per_min / 5))
+			rainfall_risk = min(15, current_rainfall_mm_per_hour * 0.6)
+			risk_score = min(100, distance_risk + rate_risk + rainfall_risk + rate_override_bonus)
 		
 		warning_level = self._determine_warning_level(risk_score, current_distance)
 		old_warning_level = self.previous_warning_level
 		self.previous_warning_level = warning_level
 		
-		# Get status message
 		status_message = self.get_status_message(warning_level, risk_score, avg_rate_cm_per_min)
 		
 		return {
 			'reading_number': self.reading_count,
 			'current_distance': current_distance,
 			'avg_rate_change_cm_per_min': avg_rate_cm_per_min,
-			'water_level_normalized': water_level_normalized,
-			'avg_rate_normalized': avg_rate_normalized,
-			'rainfall_normalized': rainfall_normalized,
+			'current_rainfall_mm_per_hour': current_rainfall_mm_per_hour,
 			'risk_score': risk_score,
 			'warning_level': warning_level,
 			'previous_warning_level': old_warning_level,
@@ -229,22 +249,20 @@ class DynamicFuzzyFloodWarningSystem:
 	def _determine_warning_level(self, risk_score, current_distance):
 		avg_rate = self.calculate_average_rate_change()
 		
-		# Base level from distance only
-		if current_distance <= self.banjir_level + 2:
+		# Base level from distance
+		if current_distance <= self.banjir_level:
 			base_level = "BANJIR"
 		elif current_distance <= self.siaga_level:
 			base_level = "SIAGA"
 		else:
 			base_level = "NORMAL"
 		
-		# FIXED: Rate thresholds matched to actual scale
+		# Rate-based escalation
 		if avg_rate < -150:  # Extreme rate anywhere
 			return "BANJIR"
 		
 		if base_level == "BANJIR":
-			if current_distance <= self.banjir_level + 2:
-				return "BANJIR"
-			if avg_rate > 50 and current_distance > self.banjir_level + 12:
+			if avg_rate > 50 and current_distance > self.banjir_level + 10:
 				return "SIAGA"
 			return "BANJIR"
 		
