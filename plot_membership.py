@@ -89,24 +89,24 @@ def plot_single_membership(system, variable_name, save_path=None):
 	if variable_name == 'water_level':
 		plt.axvline(x=system.siaga_level, color='orange', linestyle='--', linewidth=2, label=f'Siaga ({system.siaga_level}cm)')
 		plt.axvline(x=system.banjir_level, color='red', linestyle='--', linewidth=2, label=f'Banjir ({system.banjir_level}cm)')
-		plt.xlabel('Distance (cm)', fontsize=12)
-		plt.title('Water Level Membership Functions', fontsize=14, fontweight='bold')
+		plt.xlabel('Elevasi Air (cm)', fontsize=12)
+		plt.title('Keanggotaan Elevasi Air', fontsize=14, fontweight='bold')
 	elif variable_name == 'avg_rate_change':
 		plt.axvline(x=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
 		plt.axvline(x=0.67, color='green', linestyle=':', linewidth=2, alpha=0.7, label='Guideline (±0.67 cm/min)')
 		plt.axvline(x=-0.67, color='green', linestyle=':', linewidth=2, alpha=0.7)
-		plt.xlabel('Rate (cm/min)', fontsize=12)
-		plt.title('Rate of Change (Guideline: 0.67 cm/min)', fontsize=14, fontweight='bold')
+		plt.xlabel('Kenaikan Air (cm/min)', fontsize=12)
+		plt.title('Keanggotaan Kenaikan Air', fontsize=14, fontweight='bold')
 	elif variable_name == 'rainfall':
 		for val in [1, 5, 10, 20]:
 			plt.axvline(x=val, color='gray', linestyle=':', linewidth=1.5, alpha=0.6, label='BMKG' if val==1 else None)
-		plt.xlabel('Rainfall (mm/h)', fontsize=12)
-		plt.title('Rainfall (BMKG Guidelines)', fontsize=14, fontweight='bold')
+		plt.xlabel('Curah hujan (mm/jam)', fontsize=12)
+		plt.title('Keanggotaan Curah Hujan', fontsize=14, fontweight='bold')
 	elif variable_name == 'flood_risk':
-		plt.xlabel('Risk (%)', fontsize=12)
-		plt.title('Flood Risk Output', fontsize=14, fontweight='bold')
+		plt.xlabel('Resiko (%)', fontsize=12)
+		plt.title('Keanggotaan Resiko Banjir', fontsize=14, fontweight='bold')
 	
-	plt.ylabel('Membership Degree', fontsize=12)
+	plt.ylabel('Derajat Keanggotaan', fontsize=12)
 	plt.legend(loc='best', fontsize=10)
 	plt.grid(True, alpha=0.3)
 	plt.tight_layout()
@@ -124,4 +124,9 @@ if __name__ == "__main__":
 	system.calibrate(ground_distance=100, siaga_level_override=130, banjir_level_override=100)
 	
 	print("Generating plots...")
-	plot_all_membership(system)
+	# plot_all_membership(system)
+
+	plot_single_membership(system, 'water_level', save_path='water_level_membership.png')
+	plot_single_membership(system, 'avg_rate_change', save_path='avg_rate_change_membership.png')
+	plot_single_membership(system, 'rainfall', save_path='rainfall_membership.png')
+	plot_single_membership(system, 'flood_risk', save_path='flood_risk_membership.png')
