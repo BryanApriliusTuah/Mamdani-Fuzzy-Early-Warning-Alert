@@ -29,7 +29,7 @@ class DynamicFuzzyFloodWarningSystem:
 		
 		water_level = ctrl.Antecedent(np.arange(min_dist, max_dist + 1, 1), 'water_level')
 		avg_rate_change = ctrl.Antecedent(np.arange(-15, 15.01, 0.01), 'avg_rate_change')
-		rainfall = ctrl.Antecedent(np.arange(0, 101, 1), 'rainfall')
+		rainfall = ctrl.Antecedent(np.arange(0, 101, 0.1), 'rainfall')
 		flood_risk = ctrl.Consequent(np.arange(0, 101, 1), 'flood_risk', defuzzify_method='centroid')
 		
 		range_span = self.siaga_level - self.banjir_level
@@ -185,6 +185,7 @@ class DynamicFuzzyFloodWarningSystem:
 		return {
 			'reading_number': self.reading_count,
 			'current_distance': current_distance,
+			"rate_change_cm_per_sec": avg_rate / 60.0,
 			'avg_rate_change_cm_per_min': avg_rate,
 			'current_rainfall_mm_per_hour': current_rainfall_mm_per_hour,
 			'risk_score': risk_score,
