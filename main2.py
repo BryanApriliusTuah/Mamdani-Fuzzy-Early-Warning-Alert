@@ -28,7 +28,7 @@ class DynamicFuzzyFloodWarningSystem:
 		min_dist = max(0, self.banjir_level - 50)
 		
 		water_level = ctrl.Antecedent(np.arange(min_dist, max_dist + 1, 1), 'water_level')
-		avg_rate_change = ctrl.Antecedent(np.arange(-15, 15.01, 0.01), 'avg_rate_change')
+		avg_rate_change = ctrl.Antecedent(np.arange(-10, 10.01, 0.01), 'avg_rate_change')
 		rainfall = ctrl.Antecedent(np.arange(0, 101, 0.1), 'rainfall')
 		flood_risk = ctrl.Consequent(np.arange(0, 101, 1), 'flood_risk', defuzzify_method='centroid')
 		
@@ -42,14 +42,14 @@ class DynamicFuzzyFloodWarningSystem:
 		water_level['banjir'] = fuzz.trapmf(water_level.universe, [min_dist, min_dist, self.banjir_level, self.banjir_level + 5])
 		
 		g = 0.67  # guideline
-		avg_rate_change['turun sangat cepat'] = fuzz.trapmf(avg_rate_change.universe, [7*g, 10*g, 20, 20])
-		avg_rate_change['turun cepat'] = fuzz.trimf(avg_rate_change.universe, [3*g, 5*g, 8*g])
-		avg_rate_change['turun lambat'] = fuzz.trimf(avg_rate_change.universe, [g, 2*g, 3.5*g])
-		avg_rate_change['stabil'] = fuzz.trimf(avg_rate_change.universe, [-g, 0, g])
-		avg_rate_change['naik lambat'] = fuzz.trimf(avg_rate_change.universe, [-3.5*g, -2*g, -g])
-		avg_rate_change['naik cepat'] = fuzz.trimf(avg_rate_change.universe, [-8*g, -5*g, -3*g])
-		avg_rate_change['naik sangat cepat'] = fuzz.trimf(avg_rate_change.universe, [-11*g, -9*g, -6*g])
-		avg_rate_change['naik ekstrem'] = fuzz.trapmf(avg_rate_change.universe, [-20, -20, -12*g, -8*g])
+		avg_rate_change['turun sangat cepat'] = fuzz.trapmf(avg_rate_change.universe, [-20, -20, -10*g, -7*g])
+		avg_rate_change['turun cepat'] = fuzz.trimf(avg_rate_change.universe, [-8*g, -5*g, -3*g])
+		avg_rate_change['turun lambat'] = fuzz.trimf(avg_rate_change.universe, [-3.5*g, -2*g, -g])
+		avg_rate_change['stabil'] = fuzz.trimf(avg_rate_change.universe, [-1.5*g, 0, 1.5*g])
+		avg_rate_change['naik lambat'] = fuzz.trimf(avg_rate_change.universe, [g, 2*g, 3.5*g])
+		avg_rate_change['naik cepat'] = fuzz.trimf(avg_rate_change.universe, [3*g, 5*g, 8*g])
+		avg_rate_change['naik sangat cepat'] = fuzz.trimf(avg_rate_change.universe, [6*g, 9*g, 11*g])
+		avg_rate_change['naik ekstrem'] = fuzz.trapmf(avg_rate_change.universe, [8*g, 12*g, 20, 20])
 		
 		rainfall['tidak_hujan'] = fuzz.trapmf(rainfall.universe, [0, 0, 0.5, 1])
 		rainfall['ringan'] = fuzz.trimf(rainfall.universe, [0.5, 3, 5])
@@ -123,7 +123,7 @@ class DynamicFuzzyFloodWarningSystem:
 		time_span_seconds = num_intervals * self.reading_interval_seconds
 		if time_span_seconds < 1:
 			return 0.0
-		distance_change = self.distance_history[-1] - self.distance_history[0]
+		distance_change = self.distance_history[0] - self.distance_history[-1]
 		return distance_change / (time_span_seconds / 60.0)
 	
 	def get_status_message(self, warning_level, risk_score, avg_rate):
