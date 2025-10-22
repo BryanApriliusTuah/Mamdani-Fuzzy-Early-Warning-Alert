@@ -84,9 +84,8 @@ async def calculate_risk(request: RiskRequest):
             if distance_to_flood > 0:
                 time_to_flood = round(distance_to_flood / abs(avg_rate), 1)
         
-        # Recovery detection
         is_recovery = (
-            result['previous_warning_level'] in ['SIAGA', 'BANJIR'] and
+            result['previous_warning_level'] in ['SIAGA I', 'SIAGA II', 'BANJIR'] and
             result['warning_level'] == 'NORMAL'
         )
         
@@ -94,16 +93,14 @@ async def calculate_risk(request: RiskRequest):
             "reading_number": result['reading_number'],
             "current_distance": result['current_distance'],
             "water_depth_from_ground": round(water_depth, 2),
+            "avg_rate_cm_per_sec": round(result['rate_change_cm_per_sec'], 4),
             "avg_rate_change_cm_per_min": round(avg_rate, 4),
             "readings_count": len(fuzzy_system.distance_history),
-            "water_level_normalized": round(result['water_level_normalized'], 3),
-            "avg_rate_normalized": round(result['avg_rate_normalized'], 3),
-            "rainfall_normalized": round(result['rainfall_normalized'], 3),
-            "risk_score": round(risk_score, 1),
+            "risk_score": round(risk_score, 2),
             "risk_category": risk_category,
             "warning_level": result['warning_level'],
             "previous_warning_level": result['previous_warning_level'],
-			"status_mesage": result['status_message'],
+            "status_message": result['status_message'],
             "is_recovery": is_recovery,
             "time_to_flood_minutes": time_to_flood
         }
