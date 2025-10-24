@@ -31,7 +31,6 @@ def plot_all_membership(system, save_path=None):
 	for label in avg_rate_change.terms:
 		ax2.plot(avg_rate_change.universe, avg_rate_change[label].mf, linewidth=2, label=label)
 	ax2.axvline(x=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-	ax2.axvline(x=0.67, color='green', linestyle=':', linewidth=1.5, alpha=0.7, label='Guideline (±0.67)')
 	ax2.axvline(x=-0.67, color='green', linestyle=':', linewidth=1.5, alpha=0.7)
 	ax2.set_title('Rate of Change (Guideline: 0.67 cm/min)', fontweight='bold', fontsize=12)
 	ax2.set_xlabel('Rate (cm/min)', fontsize=10)
@@ -93,8 +92,10 @@ def plot_single_membership(system, variable_name, save_path=None):
 		plt.title('Keanggotaan Elevasi Air', fontsize=14, fontweight='bold')
 	elif variable_name == 'avg_rate_change':
 		plt.axvline(x=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-		plt.axvline(x=0.67, color='green', linestyle=':', linewidth=2, alpha=0.7, label='Guideline (±0.67 cm/min)')
+		plt.axvline(x=0.67, color='green', linestyle=':', linewidth=2, alpha=0.7, label='(±0.67 cm/min)')
 		plt.axvline(x=-0.67, color='green', linestyle=':', linewidth=2, alpha=0.7)
+		plt.axvline(x=1.75, color='blue', linestyle=':', linewidth=2, alpha=0.7, label='(±1.75 cm/min)')
+		plt.axvline(x=-1.75, color='blue', linestyle=':', linewidth=2, alpha=0.7)
 		plt.xlabel('Kenaikan Air (cm/min)', fontsize=12)
 		plt.title('Keanggotaan Kenaikan Air', fontsize=14, fontweight='bold')
 	elif variable_name == 'rainfall':
