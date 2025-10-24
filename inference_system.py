@@ -632,62 +632,49 @@ class DynamicFuzzyVisualizer:
 		return fig, defuzz_value
 
 	def plot_centroid_calculation(self, water_val, rate_val, rain_val):
-		"""Plot detailed centroid calculation with no overlapping elements"""
-		fig = plt.figure(figsize=(20, 18))
-		gs = fig.add_gridspec(6, 3, hspace=0.5, wspace=0.4, 
-							height_ratios=[2.5, 1.5, 1.2, 1.5, 1.2, 1.0],
-							top=0.98, bottom=0.02, left=0.05, right=0.97)
+		"""Visualize centroid defuzzification calculation process with step-by-step details"""
+		# Create figure with comprehensive layout
+		fig = plt.figure(figsize=(22, 14))
+		fig.suptitle('STEP 4: Centroid Defuzzification - Step-by-Step Calculation', 
+				fontsize=17, fontweight='bold', y=0.97)
 		
-		# Main aggregated plot
-		ax_main = fig.add_subplot(gs[0, :])
+		# Define grid layout - Modified for better detail display
+		gs = fig.add_gridspec(3, 4, width_ratios=[2.2, 1.5, 1.5, 1.5], 
+						height_ratios=[1, 1, 1.2],
+						hspace=0.32, wspace=0.22,
+						left=0.04, right=0.96, top=0.92, bottom=0.04)
 		
-		# Step 1: Area calculation (left)
-		ax_area = fig.add_subplot(gs[1, 0])
-		ax_area_detail = fig.add_subplot(gs[2, 0])
-		ax_area_detail.axis('off')
+		# Create axes
+		ax_main = fig.add_subplot(gs[0:2, 0])  # Aggregated output
+		ax_denominator_graph = fig.add_subplot(gs[0, 1])  # Denominator visual
+		ax_denominator_calc = fig.add_subplot(gs[0, 2:])  # Denominator step-by-step
+		ax_numerator_graph = fig.add_subplot(gs[1, 1])  # Numerator visual
+		ax_numerator_calc = fig.add_subplot(gs[1, 2:])  # Numerator step-by-step
+		ax_summary = fig.add_subplot(gs[2, :])  # Summary calculation
 		
-		# Step 2: Moment calculation (middle)
-		ax_moment = fig.add_subplot(gs[1, 1])
-		ax_moment_detail = fig.add_subplot(gs[2, 1])
-		ax_moment_detail.axis('off')
-		
-		# Step 3: Division (right)
-		ax_division = fig.add_subplot(gs[1, 2])
-		ax_division.axis('off')
-		ax_division_detail = fig.add_subplot(gs[2, 2])
-		ax_division_detail.axis('off')
-		
-		# Calculation flow panel
-		ax_calc = fig.add_subplot(gs[3, :])
-		ax_calc.axis('off')
-		
-		# Calculation detail panel
-		ax_calc_detail = fig.add_subplot(gs[4, :])
-		ax_calc_detail.axis('off')
-		
-		# Formula panel
-		ax_formula = fig.add_subplot(gs[5, :])
-		ax_formula.axis('off')
-		
-		# Calculate aggregated output
-		self.flood_system.fuzzy_system.input['water_level'] = water_val
-		self.flood_system.fuzzy_system.input['avg_rate_change'] = rate_val
-		self.flood_system.fuzzy_system.input['rainfall'] = rain_val
-		
+		# Compute outputs using the fuzzy system
 		try:
+			# Set inputs
+			self.flood_system.fuzzy_system.input['water_level'] = water_val
+			self.flood_system.fuzzy_system.input['avg_rate_change'] = rate_val
+			self.flood_system.fuzzy_system.input['rainfall'] = rain_val
+			
+			# Compute the system
 			self.flood_system.fuzzy_system.compute()
 			
-			# Get aggregated output
-			aggregated_output = np.zeros_like(self.flood_risk_universe, dtype=float)
-			
+			# Calculate memberships for manual aggregation
 			water_mem = self.calculate_memberships(self.water_level_universe, self.water_mf, water_val)
 			rate_mem = self.calculate_memberships(self.rate_change_universe, self.rate_mf, rate_val)
 			rain_mem = self.calculate_memberships(self.rainfall_universe, self.rain_mf, rain_val)
+			
+			# Manually aggregate all rule outputs (using OR/max aggregation)
+			aggregated_output = np.zeros_like(self.flood_risk_universe, dtype=float)
 			
 			for rule in self.rules:
 				rule_str = str(rule)
 				activation = 1.0
 				
+				# Calculate rule activation using minimum of antecedents (AND operation)
 				for wl_term, wl_val in water_mem.items():
 					if wl_term in rule_str:
 						activation = min(activation, wl_val)
@@ -700,257 +687,248 @@ class DynamicFuzzyVisualizer:
 					if rf_term in rule_str:
 						activation = min(activation, rf_val)
 				
+				# Apply to consequent using maximum (OR operation for aggregation)
 				for risk_term in self.risk_mf.keys():
 					if risk_term in rule_str:
 						clipped = np.minimum(self.risk_mf[risk_term], activation)
 						aggregated_output = np.maximum(aggregated_output, clipped)
 						break
 			
+			# Verify we have valid output
 			if np.sum(aggregated_output) > 0:
-				# Calculate centroid manually with detailed breakdown
+				# === MAIN AGGREGATED OUTPUT ===
+				ax_main.fill_between(self.flood_risk_universe, 0, aggregated_output,
+								alpha=0.4, color='#2196F3', edgecolor='#1976D2', linewidth=2)
+				ax_main.plot(self.flood_risk_universe, aggregated_output, 
+						linewidth=3, color='#0D47A1', label='Aggregated Output')
+				
+				# Calculate centroid
 				numerator = np.sum(self.flood_risk_universe * aggregated_output)
 				denominator = np.sum(aggregated_output)
-				centroid = numerator / denominator
 				
-				# Get sample points for detailed calculation display
-				sample_indices = [0, 25, 50, 75, 99]  # Show 5 sample points
+				if denominator > 0:
+					centroid = numerator / denominator
+					
+					# Mark centroid on main plot
+					ax_main.axvline(x=centroid, color='#D32F2F', linewidth=3, 
+							linestyle='--', alpha=0.8, label=f'Centroid = {centroid:.2f}%')
+					
+					# Add centroid marker
+					max_membership = np.max(aggregated_output)
+					ax_main.plot(centroid, max_membership * 0.5, 'o', markersize=15, 
+						color='#D32F2F', markeredgecolor='white', markeredgewidth=2, zorder=5)
+					
+					# Add formula
+					formula_text = 'Centroid Formula:\nC = Σ(x·μ(x)) / Σμ(x)'
+					ax_main.text(0.03, 0.96, formula_text, 
+						transform=ax_main.transAxes, ha='left', va='top',
+						fontsize=11, fontweight='bold',
+						bbox=dict(boxstyle='round,pad=0.6', facecolor='white', 
+							edgecolor='#424242', linewidth=2))
 				
-				# Verify with fuzz.defuzz
-				centroid_verify = fuzz.defuzz(self.flood_risk_universe, aggregated_output, 'centroid')
-				
-				# === MAIN PLOT ===
-				ax_main.fill_between(self.flood_risk_universe, 0, aggregated_output,
-								alpha=0.4, color='#4CAF50', label='Aggregated Membership')
-				ax_main.plot(self.flood_risk_universe, aggregated_output, 
-						linewidth=2.5, color='#2E7D32')
-				
-				# Mark sample points
-				for idx in sample_indices:
-					x_val = self.flood_risk_universe[idx]
-					y_val = aggregated_output[idx]
-					ax_main.plot(x_val, y_val, 'o', markersize=8, 
-							color='#2196F3', markeredgecolor='white', markeredgewidth=2, zorder=8)
-				
-				# Mark centroid
-				y_centroid = fuzz.interp_membership(self.flood_risk_universe, aggregated_output, centroid)
-				ax_main.axvline(centroid, color='#FF0000', linestyle='--', 
-							linewidth=3, alpha=0.8, zorder=5)
-				ax_main.plot([centroid], [y_centroid], 's', markersize=18, 
-						color='#FF0000', markeredgecolor='white', markeredgewidth=3, zorder=6)
-				
-				# Annotation - positioned to avoid overlap
-				annotation_x = centroid + 8 if centroid < 65 else centroid - 8
-				annotation_ha = 'left' if centroid < 65 else 'right'
-				ax_main.annotate(f'CoG = {centroid:.2f}%', 
-						xy=(centroid, y_centroid),
-						xytext=(annotation_x, y_centroid + 0.22),
-						fontsize=13, fontweight='bold', color='#FF0000', ha=annotation_ha,
-						bbox=dict(boxstyle='round,pad=0.7', facecolor='white', 
-							edgecolor='#FF0000', linewidth=3),
-						arrowprops=dict(arrowstyle='->', color='#FF0000', lw=2.5))
-				
-				# Balance visualization
-				triangle_x = [centroid - 4, centroid + 4, centroid, centroid - 4]
-				triangle_y = [-0.08, -0.08, -0.03, -0.08]
-				ax_main.fill(triangle_x, triangle_y, color='#FF0000', alpha=0.7, zorder=7)
-				ax_main.plot([centroid, centroid], [-0.03, 0], 'r-', linewidth=3, zorder=7)
-				
-				ax_main.set_xlabel('Flood Risk (%)', fontsize=12, fontweight='600')
-				ax_main.set_ylabel('Membership Degree (μ)', fontsize=12, fontweight='600')
-				ax_main.legend(fontsize=11, loc='upper left', framealpha=0.95, edgecolor='black')
-				ax_main.grid(True, alpha=0.25, linestyle='--', linewidth=0.5)
-				ax_main.set_ylim([-0.12, 1.15])
-				ax_main.set_xlim([0, 100])
-				ax_main.set_facecolor('#FAFAFA')
-				
-				# === STEP 1: AREA (DENOMINATOR) ===
-				ax_area.fill_between(self.flood_risk_universe, 0, aggregated_output,
-								alpha=0.6, color='#4CAF50', edgecolor='#2E7D32', linewidth=1.5)
-				ax_area.plot(self.flood_risk_universe, aggregated_output, 
+					ax_main.set_xlabel('Flood Risk (%)', fontsize=11, fontweight='600')
+					ax_main.set_ylabel('Membership Degree μ(x)', fontsize=11, fontweight='600')
+					ax_main.set_title('Aggregated Output from All Rules', 
+						fontsize=13, fontweight='bold', color='#424242', pad=12)
+					ax_main.legend(loc='upper right', fontsize=10, framealpha=0.95)
+					ax_main.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
+					ax_main.set_facecolor('#FAFAFA')
+					ax_main.set_xlim([0, 100])
+					ax_main.set_ylim([0, max(aggregated_output) * 1.15])
+					
+					# === DENOMINATOR CALCULATION (Σμ(x)) ===
+					# Graph - This shows the same aggregated output (the area we're integrating)
+					ax_denominator_graph.fill_between(self.flood_risk_universe, 0, aggregated_output,
+									alpha=0.5, color='#4CAF50', edgecolor='#2E7D32', linewidth=1.5)
+					ax_denominator_graph.plot(self.flood_risk_universe, aggregated_output, 
 						linewidth=2.5, color='#1B5E20')
-				
-				# Mark sample points
-				for idx in sample_indices:
-					x_val = self.flood_risk_universe[idx]
-					y_val = aggregated_output[idx]
-					ax_area.plot(x_val, y_val, 'o', markersize=7, 
-							color='#2196F3', markeredgecolor='white', markeredgewidth=1.5)
-					ax_area.plot([x_val, x_val], [0, y_val], 'b--', linewidth=1, alpha=0.4)
-				
-				# Result box - positioned at top right to avoid overlap
-				ax_area.text(0.97, 0.96, f'Σμ(x) = {denominator:.2f}', 
-						transform=ax_area.transAxes, ha='right', va='top',
-						fontsize=12, fontweight='bold', color='#1B5E20',
-						bbox=dict(boxstyle='round,pad=0.6', facecolor='#E8F5E9', 
-							edgecolor='#2E7D32', linewidth=2.5))
-				
-				ax_area.set_xlabel('Risk Level x (%)', fontsize=10, fontweight='600')
-				ax_area.set_ylabel('μ(x)', fontsize=10, fontweight='600')
-				ax_area.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
-				ax_area.set_facecolor('#FAFAFA')
-				ax_area.set_xlim([0, 100])
-				ax_area.set_ylim([0, max(aggregated_output) * 1.12])
-				
-				# Detailed calculation for area
-				detail_text = "Sum all membership values:\n"
-				detail_text += "─────────────────────\n"
-				for i, idx in enumerate(sample_indices):
-					x_val = self.flood_risk_universe[idx]
-					y_val = aggregated_output[idx]
-					detail_text += f"μ[{idx:2d}] = {y_val:.4f}\n"
-				detail_text += f"... (100 total)\n"
-				detail_text += "─────────────────────\n"
-				detail_text += f"Σμ(x) = {denominator:.4f}"
-				
-				ax_area_detail.text(0.5, 0.5, detail_text, 
-							ha='center', va='center',
-							fontsize=9.5, family='monospace',
-							bbox=dict(boxstyle='round,pad=0.9', facecolor='#E8F5E9', 
-								edgecolor='#2E7D32', linewidth=2.5))
-				
-				# === STEP 2: MOMENT (NUMERATOR) ===
-				weighted_contribution = self.flood_risk_universe * aggregated_output
-				ax_moment.fill_between(self.flood_risk_universe, 0, weighted_contribution,
-									alpha=0.6, color='#FF9800', edgecolor='#F57C00', linewidth=1.5)
-				ax_moment.plot(self.flood_risk_universe, weighted_contribution, 
-						linewidth=2.5, color='#E65100')
-				
-				# Mark sample points
-				for idx in sample_indices:
-					x_val = self.flood_risk_universe[idx]
-					y_val = weighted_contribution[idx]
-					ax_moment.plot(x_val, y_val, 'o', markersize=7, 
-							color='#2196F3', markeredgecolor='white', markeredgewidth=1.5)
-					ax_moment.plot([x_val, x_val], [0, y_val], 'b--', linewidth=1, alpha=0.4)
-				
-				ax_moment.text(0.97, 0.96, f'Σ(x·μ(x)) = {numerator:.2f}', 
-						transform=ax_moment.transAxes, ha='right', va='top',
-						fontsize=12, fontweight='bold', color='#E65100',
-						bbox=dict(boxstyle='round,pad=0.6', facecolor='#FFF3E0', 
-							edgecolor='#F57C00', linewidth=2.5))
-				
-				ax_moment.set_xlabel('Risk Level x (%)', fontsize=10, fontweight='600')
-				ax_moment.set_ylabel('x × μ(x)', fontsize=10, fontweight='600')
-				ax_moment.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
-				ax_moment.set_facecolor('#FAFAFA')
-				ax_moment.set_xlim([0, 100])
-				ax_moment.set_ylim([0, max(weighted_contribution) * 1.12])
-				
-				# Detailed calculation for moment
-				detail_text = "Multiply x by μ(x), then sum:\n"
-				detail_text += "──────────────────────────\n"
-				for i, idx in enumerate(sample_indices):
-					x_val = self.flood_risk_universe[idx]
-					mu_val = aggregated_output[idx]
-					product = x_val * mu_val
-					detail_text += f"{x_val:5.1f}×{mu_val:.4f}={product:6.2f}\n"
-				detail_text += f"... (100 total)\n"
-				detail_text += "──────────────────────────\n"
-				detail_text += f"Σ(x·μ(x)) = {numerator:.4f}"
-				
-				ax_moment_detail.text(0.5, 0.5, detail_text, 
-							ha='center', va='center',
-							fontsize=9.5, family='monospace',
-							bbox=dict(boxstyle='round,pad=0.9', facecolor='#FFF3E0', 
-								edgecolor='#F57C00', linewidth=2.5))
-				
-				# === STEP 3: DIVISION ===
-				# Visual representation of division
-				# ax_division.text(0.5, 0.88, 'STEP 3: Divide', ha='center', va='top',
-				# 			fontsize=13, fontweight='bold', color='#2196F3')
-				
-				# Large division symbol
-				ax_division.plot([0.15, 0.85], [0.5, 0.5], 'k-', linewidth=3)
-				
-				# Numerator box
-				ax_division.text(0.5, 0.7, f'{numerator:.2f}', ha='center', va='center',
-							fontsize=18, fontweight='bold', color='#E65100',
-							bbox=dict(boxstyle='round,pad=0.7', facecolor='#FFF3E0', 
-								edgecolor='#F57C00', linewidth=2.5))
-				
-				# Denominator box
-				ax_division.text(0.5, 0.3, f'{denominator:.2f}', ha='center', va='center',
-							fontsize=18, fontweight='bold', color='#1B5E20',
-							bbox=dict(boxstyle='round,pad=0.7', facecolor='#E8F5E9', 
-								edgecolor='#2E7D32', linewidth=2.5))
-				
-				# Equals arrow
-				ax_division.annotate('', xy=(0.5, 0.08), xytext=(0.5, 0.15),
-							arrowprops=dict(arrowstyle='->', lw=3, color='#2196F3'))
-				
-				ax_division.set_xlim([0, 1])
-				ax_division.set_ylim([0, 1])
-				
-				# Division detail
-				detail_text = "Division:\n"
-				detail_text += "─────────────────\n"
-				detail_text += f"  {numerator:.4f}\n"
-				detail_text += f"  ─────────\n"
-				detail_text += f"  {denominator:.4f}\n"
-				detail_text += "─────────────────\n"
-				detail_text += f"= {centroid:.4f}%\n"
-				detail_text += "─────────────────\n"
-				detail_text += f"≈ {centroid:.2f}%"
-				
-				ax_division_detail.text(0.5, 0.5, detail_text, 
-							ha='center', va='center',
-							fontsize=10, family='monospace', fontweight='bold',
-							bbox=dict(boxstyle='round,pad=1.0', facecolor='#E3F2FD', 
-								edgecolor='#2196F3', linewidth=2.5))
-				
-				# === CALCULATION FLOW ===
-				flow_y = 0.5
-				
-				# Title
-				ax_calc.text(0.5, 0.85, 'Centroid Calculation Process', 
-						ha='center', va='center',
-						fontsize=14, fontweight='bold', color='#424242',
-						bbox=dict(boxstyle='round,pad=0.6', facecolor='#EEEEEE', 
-							edgecolor='#757575', linewidth=2))
-				
-				# Flow boxes
-				flow_items = [
-					('①', 'Sum μ(x)', f'{denominator:.2f}', '#4CAF50', '#E8F5E9', 0.10),
-					('②', 'Sum x·μ(x)', f'{numerator:.2f}', '#FF9800', '#FFF3E0', 0.32),
-					('③', 'Divide', f'{numerator:.2f}/{denominator:.2f}', '#2196F3', '#E3F2FD', 0.57),
-					('④', 'Result', f'{centroid:.2f}%', '#D32F2F', '#FFEBEE', 0.82)
-				]
-				
-				for i, (num, label, value, color, bgcolor, x_pos) in enumerate(flow_items):
-					# Number badge
-					ax_calc.text(x_pos, flow_y + 0.13, num, 
-							ha='center', va='center',
-							fontsize=14, fontweight='bold', color='white',
-							bbox=dict(boxstyle='circle,pad=0.4', facecolor=color, linewidth=0))
 					
-					# Label
-					ax_calc.text(x_pos, flow_y - 0.02, label, 
-							ha='center', va='center',
-							fontsize=10, fontweight='bold', color=color)
+					# Mark ALL calculation points that are non-zero
+					for idx in range(len(self.flood_risk_universe)):
+						x_val = self.flood_risk_universe[idx]
+						y_val = aggregated_output[idx]
+						if y_val > 0.001:  # Only show non-zero values
+							ax_denominator_graph.plot(x_val, y_val, 'o', markersize=3, 
+								color='#FF5722', markeredgecolor='white', markeredgewidth=0.5, alpha=0.6)
 					
-					# Value box
-					ax_calc.text(x_pos, flow_y - 0.18, value, 
-							ha='center', va='center',
-							fontsize=10, fontweight='bold', color=color,
-							bbox=dict(boxstyle='round,pad=0.6', facecolor=bgcolor, 
-								edgecolor=color, linewidth=2))
+					ax_denominator_graph.set_title('Denominator: Σμ(x)\n(Area under curve)', 
+												fontsize=11, fontweight='bold')
+					ax_denominator_graph.set_xlabel('Risk (%)', fontsize=9)
+					ax_denominator_graph.set_ylabel('μ(x)', fontsize=9)
+					ax_denominator_graph.grid(True, alpha=0.3, linestyle='--')
+					ax_denominator_graph.set_xlim([0, 100])
 					
-					# Arrow
-					if i < len(flow_items) - 1:
-						next_x = flow_items[i+1][5]
-						ax_calc.annotate('', xy=(next_x - 0.03, flow_y), 
-									xytext=(x_pos + 0.06, flow_y),
-									arrowprops=dict(arrowstyle='->', lw=2.5, 
-										color='#757575', alpha=0.6))
+					# Step-by-step calculation - SHOW ALL NON-ZERO VALUES
+					ax_denominator_calc.axis('off')
+					
+					# Get all non-zero indices
+					nonzero_indices = [i for i in range(len(aggregated_output)) if aggregated_output[i] > 0.001]
+					total_nonzero = len(nonzero_indices)
+					
+					# Create table showing ALL calculations
+					calc_text = f"DENOMINATOR: Σμ(x) [{total_nonzero} points]\n"
+					calc_text += "=" * 45 + "\n"
+					calc_text += "x      μ(x)        Running Sum\n"
+					calc_text += "-" * 45 + "\n"
+					
+					running_sum_denom = 0
+					rows_to_show = min(25, total_nonzero)  # Show first 20
+					
+					for i, idx in enumerate(nonzero_indices[:rows_to_show]):
+						x_val = self.flood_risk_universe[idx]
+						mu_val = aggregated_output[idx]
+						running_sum_denom += mu_val
+						calc_text += f"{x_val:5.1f}  {mu_val:8.5f}  → {running_sum_denom:10.5f}\n"
+					
+					if total_nonzero > rows_to_show:
+						# Calculate the remaining sum
+						remaining_sum = np.sum(aggregated_output[nonzero_indices[rows_to_show:]])
+						calc_text += f"  ...  ... ({total_nonzero - rows_to_show} more points)\n"
+						running_sum_denom += remaining_sum
+					
+					calc_text += "-" * 45 + "\n"
+					calc_text += f"FINAL: Σμ(x) = {denominator:.5f}"
+					
+					ax_denominator_calc.text(0.05, 1, calc_text, 
+								ha='left', va='top', transform=ax_denominator_calc.transAxes,
+								fontsize=8, family='monospace',
+								bbox=dict(boxstyle='round,pad=0.8', facecolor='#E8F5E9', 
+									edgecolor='#2E7D32', linewidth=2))
+					
+					# === NUMERATOR CALCULATION (Σ(x·μ(x))) ===
+					# Graph - This shows weighted contribution (x * membership)
+					weighted_contribution = self.flood_risk_universe * aggregated_output
+					ax_numerator_graph.fill_between(self.flood_risk_universe, 0, weighted_contribution,
+										alpha=0.6, color='#FF9800', edgecolor='#F57C00', linewidth=1.5)
+					ax_numerator_graph.plot(self.flood_risk_universe, weighted_contribution, 
+							linewidth=2.5, color='#E65100')
+					
+					# Mark ALL calculation points that are non-zero
+					for idx in range(len(self.flood_risk_universe)):
+						x_val = self.flood_risk_universe[idx]
+						y_val = weighted_contribution[idx]
+						if y_val > 0.001:  # Only show non-zero values
+							ax_numerator_graph.plot(x_val, y_val, 'o', markersize=3, 
+								color='#2196F3', markeredgecolor='white', markeredgewidth=0.5, alpha=0.6)
+					
+					ax_numerator_graph.set_title('Numerator: Σ(x·μ(x))\n(Weighted area)', 
+												fontsize=11, fontweight='bold')
+					ax_numerator_graph.set_xlabel('Risk (%)', fontsize=9)
+					ax_numerator_graph.set_ylabel('x × μ(x)', fontsize=9)
+					ax_numerator_graph.grid(True, alpha=0.3, linestyle='--')
+					ax_numerator_graph.set_xlim([0, 100])
+					
+					# Step-by-step calculation - SHOW ALL NON-ZERO VALUES
+					ax_numerator_calc.axis('off')
+					
+					calc_text = f"NUMERATOR: Σ(x·μ(x)) [{total_nonzero} points]\n"
+					calc_text += "=" * 55 + "\n"
+					calc_text += "x      μ(x)       x·μ(x)      Running Sum\n"
+					calc_text += "-" * 55 + "\n"
+					
+					running_sum_numer = 0
+					
+					for i, idx in enumerate(nonzero_indices[:rows_to_show]):
+						x_val = self.flood_risk_universe[idx]
+						mu_val = aggregated_output[idx]
+						product = x_val * mu_val
+						running_sum_numer += product
+						calc_text += f"{x_val:5.1f}  {mu_val:8.5f}  {product:8.3f}  → {running_sum_numer:10.3f}\n"
+					
+					if total_nonzero > rows_to_show:
+						# Calculate the remaining sum
+						remaining_products = self.flood_risk_universe[nonzero_indices[rows_to_show:]] * \
+										aggregated_output[nonzero_indices[rows_to_show:]]
+						remaining_sum = np.sum(remaining_products)
+						calc_text += f"  ...  ...      ... ({total_nonzero - rows_to_show} more)\n"
+						running_sum_numer += remaining_sum
+					
+					calc_text += "-" * 55 + "\n"
+					calc_text += f"FINAL: Σ(x·μ(x)) = {numerator:.3f}"
+					
+					ax_numerator_calc.text(0.05, 0.95, calc_text, 
+								ha='left', va='top', transform=ax_numerator_calc.transAxes,
+								fontsize=8, family='monospace',
+								bbox=dict(boxstyle='round,pad=0.8', facecolor='#FFF3E0', 
+									edgecolor='#F57C00', linewidth=2))
+					
+					# === FINAL SUMMARY CALCULATION ===
+					ax_summary.axis('off')
+					
+					# Create visual flow of calculation
+					summary_y = 0.5
+					
+					# Title
+					ax_summary.text(0.5, 0.85, 'FINAL CENTROID CALCULATION', 
+							ha='center', va='center',
+							fontsize=14, fontweight='bold', color='#424242',
+							bbox=dict(boxstyle='round,pad=0.6', facecolor='#EEEEEE', 
+								edgecolor='#757575', linewidth=2))
+					
+					# Step-by-step boxes
+					steps = [
+						(0.15, 'Step 1: Sum all μ(x)', 
+						f'Σμ(x) = {denominator:.5f}\n({total_nonzero} points)', 
+						'#4CAF50', '#E8F5E9'),
+						(0.38, 'Step 2: Sum all x·μ(x)', 
+						f'Σ(x·μ(x)) = {numerator:.3f}\n({total_nonzero} points)', 
+						'#FF9800', '#FFF3E0'),
+						(0.62, 'Step 3: Divide', 
+						f'{numerator:.3f}\n────────\n{denominator:.5f}', 
+						'#2196F3', '#E3F2FD'),
+						(0.85, 'Final Result', 
+						f'Centroid = {centroid:.2f}%', 
+						'#D32F2F', '#FFEBEE')
+					]
+					
+					for i, (x_pos, title, value, color, bgcolor) in enumerate(steps):
+						# Step number
+						ax_summary.text(x_pos, summary_y + 0.15, f'STEP {i+1}', 
+								ha='center', va='center',
+								fontsize=10, fontweight='bold', color=color)
+						
+						# Title
+						ax_summary.text(x_pos, summary_y + 0.05, title, 
+								ha='center', va='center',
+								fontsize=9, color='#424242')
+						
+						# Value box
+						ax_summary.text(x_pos, summary_y - 0.15, value, 
+								ha='center', va='center',
+								fontsize=9.5, fontweight='bold', family='monospace',
+								bbox=dict(boxstyle='round,pad=0.8', facecolor=bgcolor, 
+									edgecolor=color, linewidth=2.5))
+						
+						# Arrow to next step
+						if i < len(steps) - 1:
+							next_x = steps[i+1][0]
+							ax_summary.annotate('', xy=(next_x - 0.06, summary_y), 
+										xytext=(x_pos + 0.06, summary_y),
+										arrowprops=dict(arrowstyle='->', lw=2.5, 
+											color='#757575', alpha=0.7))
+					
+					# Add explanation note
+					note_text = (f"Note: The calculation uses all {total_nonzero} non-zero points from the {len(self.flood_risk_universe)}-point universe.\n"
+								f"Denominator sums the membership values. Numerator sums the weighted values (x·μ(x)).")
+					ax_summary.text(0.5, 0.05, note_text, 
+							ha='center', va='center',
+							fontsize=9, style='italic', color='#666666')
 				
+				else:
+					ax_main.text(0.5, 0.5, 'No active rules - cannot calculate centroid', 
+							ha='center', va='center', fontsize=16, color='gray',
+							transform=ax_main.transAxes)
+					centroid = 0
 			else:
-				ax_main.text(0.5, 0.5, 'No active rules - cannot calculate centroid', 
+				ax_main.text(0.5, 0.5, 'No aggregated output - no rules fired', 
 						ha='center', va='center', fontsize=16, color='gray',
 						transform=ax_main.transAxes)
 				centroid = 0
 			
 		except Exception as e:
 			print(f"Error in centroid calculation: {e}")
+			import traceback
+			traceback.print_exc()
 			centroid = 0
 			ax_main.text(0.5, 0.5, f'Error: {str(e)}', 
 					ha='center', va='center', fontsize=12, color='red',
