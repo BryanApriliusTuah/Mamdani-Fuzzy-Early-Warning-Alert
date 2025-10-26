@@ -212,9 +212,9 @@ class DynamicFuzzyFloodWarningSystem:
 		g = self.RATE_FACTOR
 		
 		rate_override = 0
-		if avg_rate > 12 * g:
+		if avg_rate > 2 * g:
 			rate_override = 25
-		elif avg_rate > 7 * g:
+		elif avg_rate > 1.5 * g:
 			rate_override = 12
 		
 		self.fuzzy_system.input['water_level'] = current_distance
@@ -229,7 +229,7 @@ class DynamicFuzzyFloodWarningSystem:
 				current_distance, avg_rate, current_rainfall_mm_per_hour, rate_override
 			)
 		
-		warning_level = self._determine_warning_level(risk_score, current_distance)
+		warning_level = self._determine_warning_level(risk_score, current_distance, current_rainfall_mm_per_hour)
 		old_warning = self.previous_warning_level
 		self.previous_warning_level = warning_level
 		
@@ -245,7 +245,7 @@ class DynamicFuzzyFloodWarningSystem:
 			'status_message': self.get_status_message(warning_level, risk_score, avg_rate)
 		}
 	
-	def _determine_warning_level(self, risk_score: float, current_distance: float) -> str:
+	def _determine_warning_level(self, risk_score: float, current_distance: float, rainfall: float) -> str:
 		avg_rate = self.calculate_average_rate_change()
 		g = self.RATE_FACTOR
 		
@@ -261,27 +261,29 @@ class DynamicFuzzyFloodWarningSystem:
 			return "BANJIR"
 		
 		if base == "BANJIR":
-			if avg_rate > 3 * g and current_distance > self.banjir_level + 10:
+			if avg_rate < -5 * g and current_distance > self.banjir_level + 15:
 				return "SIAGA II"
 			return "BANJIR"
 		
 		if base == "SIAGA II":
-			if avg_rate > 9 * g:
+			if current_distance <= self.banjir_level + 8:
 				return "BANJIR"
-			if avg_rate > 6 * g and risk_score >= 95:
+			if avg_rate > 1 * g:
 				return "BANJIR"
-			if current_distance <= self.banjir_level + 2 and avg_rate < -4 * g:
+			if risk_score >= 70:
 				return "BANJIR"
-			if avg_rate > 3 * g and risk_score < 35:
+			if current_distance <= self.banjir_level + 3 and avg_rate <= 0:
+				return "BANJIR"
+			if avg_rate < -5 * g and risk_score < 30:
 				return "SIAGA I"
 			return "SIAGA II"
 		
 		if base == "SIAGA I":
-			if avg_rate > 9 * g:
+			if avg_rate > 8 * g:
 				return "BANJIR"
-			if avg_rate > 6 * g and risk_score >= 90:
+			if avg_rate > 4 * g or (current_distance <= self.banjir_level + 12 and risk_score >= 60):
 				return "SIAGA II"
-			if avg_rate > 3 * g and risk_score < 30:
+			if avg_rate < -6 * g and risk_score < 25:
 				return "NORMAL"
 			return "SIAGA I"
 		
@@ -292,7 +294,7 @@ class DynamicFuzzyFloodWarningSystem:
 				return "SIAGA II"
 			if avg_rate > 5 * g:
 				return "SIAGA I"
-			if risk_score >= 85:
+			if risk_score >= 75:
 				return "SIAGA I"
 			return "NORMAL"
 		
