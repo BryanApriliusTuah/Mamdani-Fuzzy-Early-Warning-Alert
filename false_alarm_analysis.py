@@ -24,8 +24,8 @@ class FloodDetectionAnalyzer:
         # Dapatkan prediksi akhir
         result = system.calculate_risk(jarak, hujan)
         
-        # Cek apakah ada peringatan banjir (SIAGA atau BANJIR)
-        if result['warning_level'] in ['SIAGA', 'BANJIR']:
+        # Cek apakah ada peringatan banjir (SIAGA I, SIAGA II, atau BANJIR)
+        if result['warning_level'] in ['SIAGA I', 'SIAGA II', 'BANJIR']:
             max_warning = result['warning_level']
         
         return max_warning, result
@@ -44,8 +44,7 @@ class FloodDetectionAnalyzer:
         for _, row in df.iterrows():
             warning, _ = self.simulate(sys, row.jarak_cm, row.laju_perubahan_cm_per_menit, 
                                       row.curah_hujan_mm_per_jam)
-            # Biner: diperingatkan (SIAGA atau BANJIR) atau tidak (NORMAL)
-            banjir_prediksi = warning in ['SIAGA', 'BANJIR']
+            banjir_prediksi = warning in ['SIAGA I', 'SIAGA II', 'BANJIR']
             predictions.append(banjir_prediksi)
         
         df['banjir_prediksi'] = predictions
