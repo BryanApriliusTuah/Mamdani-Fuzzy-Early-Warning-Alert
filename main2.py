@@ -138,46 +138,62 @@ class DynamicFuzzyFloodWarningSystem:
 		distance_change = self.distance_history[0] - self.distance_history[-1]
 		return distance_change / (time_span_seconds / 60.0)
 	
-	def get_status_message(self, warning_level: str, risk_score: float, avg_rate: float) -> str:
+	def get_status_message(self, flood_risk_category: str, risk_score: float, avg_rate: float, current_distance: float) -> str:
 		g = self.RATE_FACTOR
+		water_rising_fast = avg_rate < -5 * g
+		water_rising_very_fast = avg_rate < -8 * g
+		water_at_banjir = current_distance <= self.banjir_level
+		water_near_banjir = current_distance <= self.banjir_level + 10
 		
-		if warning_level == "BANJIR":
+		if flood_risk_category == "very high":
 			if risk_score >= 95:
 				return "🚨 CRITICAL FLOOD EMERGENCY! Immediate evacuation required!"
-			elif avg_rate < -8 * g:
-				return "🚨 EXTREME FLOOD - Water rising extremely fast!"
-			elif risk_score >= 85:
-				return "⚠️ SEVERE FLOOD WARNING - High water levels detected!"
+			elif water_rising_very_fast:
+				return "🚨 EXTREME DANGER - Water rising extremely fast!"
+			elif water_at_banjir:
+				return "🚨 SEVERE FLOOD WARNING - Water at critical level!"
 			else:
-				return "⚠️ FLOOD WARNING - Water has reached critical level!"
+				return "🚨 VERY HIGH RISK - Take immediate action!"
 		
-		elif warning_level == "SIAGA II":
-			if avg_rate < -7 * g:
-				return "🔴 SIAGA II - Final preparations! Evacuate immediately if heavy rain!"
+		elif flood_risk_category == "high":
+			if water_rising_very_fast:
+				return "🔴 HIGH RISK - Water rising dangerously fast!"
+			elif water_at_banjir:
+				return "🔴 HIGH RISK - Water at flood level, prepare to evacuate!"
+			elif water_near_banjir and water_rising_fast:
+				return "🔴 HIGH RISK - Critical situation developing, be ready!"
 			elif risk_score >= 75:
-				return "🔴 SIAGA II - HIGH RISK! Be ready to evacuate!"
-			elif risk_score >= 50:
-				return "🔴 SIAGA II - Water level critical, prepare to evacuate!"
+				return "🔴 HIGH RISK - Prepare evacuation supplies now!"
 			else:
-				return "🔴 SIAGA II - Water approaching flood level!"
+				return "🔴 HIGH RISK - Significant flood danger, stay alert!"
 		
-		elif warning_level == "SIAGA I":
-			if avg_rate < -5 * g:
-				return "🟠 SIAGA I - Water rising rapidly, monitor closely!"
+		elif flood_risk_category == "moderate":
+			if water_rising_fast:
+				return "🟠 MODERATE RISK - Water rising rapidly, monitor closely!"
+			elif water_near_banjir:
+				return "🟠 MODERATE RISK - Water approaching critical level!"
 			elif risk_score >= 60:
-				return "🟠 SIAGA I - Elevated risk, prepare evacuation supplies!"
+				return "🟠 MODERATE RISK - Elevated danger, prepare precautions!"
 			else:
-				return "🟠 SIAGA I - Water level elevated, stay alert!"
+				return "🟠 MODERATE RISK - Stay vigilant and prepared!"
+		
+		elif flood_risk_category == "low":
+			if water_rising_fast:
+				return "🟡 LOW RISK - Water rising but still safe, continue monitoring!"
+			elif avg_rate < -2 * g:
+				return "🟡 LOW RISK - Water level increasing, watch conditions!"
+			elif risk_score >= 30:
+				return "🟡 LOW RISK - Minor concern, stay aware of conditions!"
+			else:
+				return "🟡 LOW RISK - Situation stable, routine monitoring!"
 		
 		else:
-			if risk_score >= 85:
-				return "⚡ WARNING - Risk elevated despite normal water level!"
-			elif risk_score >= 50:
-				return "ℹ️ MONITORING - Elevated risk factors detected!"
-			elif avg_rate < -2 * g:
-				return "ℹ️ WATCH - Water level rising steadily!"
+			if avg_rate < -2 * g:
+				return "✅ VERY LOW RISK - Water rising slightly, no immediate concern!"
+			elif risk_score >= 15:
+				return "✅ VERY LOW RISK - Conditions normal, maintain awareness!"
 			else:
-				return "✅ NORMAL - Water level safe!"
+				return "✅ VERY LOW RISK - All clear, water level safe!"
 	
 	def _calculate_fallback_risk(self, current_distance: float, 
 								 avg_rate: float, 
@@ -232,6 +248,7 @@ class DynamicFuzzyFloodWarningSystem:
 		warning_level = self._determine_warning_level(risk_score, current_distance, current_rainfall_mm_per_hour)
 		old_warning = self.previous_warning_level
 		self.previous_warning_level = warning_level
+		flood_risk_category = self.get_flood_risk_categories(risk_score)['dominant_category']
 		
 		return {
 			'reading_number': self.reading_count,
@@ -242,7 +259,7 @@ class DynamicFuzzyFloodWarningSystem:
 			'risk_score': round(risk_score, 2),
 			'warning_level': warning_level,
 			'previous_warning_level': old_warning,
-			'status_message': self.get_status_message(warning_level, risk_score, avg_rate)
+			'status_message': self.get_status_message(flood_risk_category, risk_score, avg_rate, current_distance)
 		}
 	
 	def _determine_warning_level(self, risk_score: float, current_distance: float, rainfall: float) -> str:
