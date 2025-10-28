@@ -308,6 +308,61 @@ class DynamicFuzzyFloodWarningSystem:
 	def reset_history(self) -> None:
 		self._reset_system()
 	
+	def get_flood_risk_categories(self, risk_score: float) -> Dict[str, any]:
+		if self.fuzzy_system is None:
+			raise ValueError("System not calibrated")
+		
+		if not 0 <= risk_score <= 100:
+			raise ValueError("Risk score must be between 0 and 100")
+		
+		flood_risk_consequent = None
+		for consequent in self.fuzzy_system.ctrl.consequents:
+			if consequent.label == 'flood_risk':
+				flood_risk_consequent = consequent
+				break
+		
+		if flood_risk_consequent is None:
+			raise ValueError("Flood risk consequent not found in fuzzy system")
+		
+		categories = {}
+		for term_name in flood_risk_consequent.terms:
+			membership_degree = fuzz.interp_membership(
+				flood_risk_consequent.universe,
+				flood_risk_consequent[term_name].mf,
+				risk_score
+			)
+			categories[term_name] = round(membership_degree, 4)
+		
+		dominant_category = max(categories.items(), key=lambda x: x[1])
+		
+		return {
+			'risk_score': risk_score,
+			'categories': categories,
+			'dominant_category': dominant_category[0],
+			'dominant_membership': dominant_category[1]
+		}
+	
+	def get_all_fuzzy_categories(self) -> Dict[str, list]:
+		if self.fuzzy_system is None:
+			raise ValueError("System not calibrated")
+		
+		result = {
+			'water_level': [],
+			'avg_rate_change': [],
+			'rainfall': [],
+			'flood_risk': []
+		}
+		
+		for antecedent in self.fuzzy_system.ctrl.antecedents:
+			if antecedent.label in result:
+				result[antecedent.label] = list(antecedent.terms.keys())
+		
+		for consequent in self.fuzzy_system.ctrl.consequents:
+			if consequent.label in result:
+				result[consequent.label] = list(consequent.terms.keys())
+		
+		return result
+
 	def get_system_info(self) -> Dict[str, any]:
 		return {
 			'calibrated': self.calibration_height is not None,
