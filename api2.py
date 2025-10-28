@@ -32,15 +32,6 @@ class RiskRequest(BaseModel):
 
 @app.post("/api/calibrate")
 async def calibrate(request: CalibrationRequest):
-    """
-    Calibrate the flood warning system with ground distance and threshold levels.
-    
-    - **ground_distance**: Distance from sensor to ground when dry (cm)
-    - **siaga_level**: Optional distance for Siaga I alert (default: ground_distance + 30)
-    - **banjir_level**: Optional distance for flood alert (default: ground_distance)
-    
-    Note: siaga_level must be greater than banjir_level
-    """
     try:
         # Validate relationship between levels
         if request.siaga_level and request.banjir_level:
@@ -72,16 +63,6 @@ async def calibrate(request: CalibrationRequest):
 
 @app.post("/api/calculate-risk")
 async def calculate_risk(request: RiskRequest):
-    """
-    Calculate flood risk based on current sensor reading and rainfall.
-    
-    Returns comprehensive flood risk assessment including:
-    - Risk score (0-100%)
-    - Warning level (NORMAL, SIAGA I, SIAGA II, BANJIR)
-    - Water level metrics
-    - Rate of change
-    - Time to flood estimation
-    """
     if not fuzzy_system.calibration_height:
         raise HTTPException(
             status_code=400, 
@@ -89,43 +70,25 @@ async def calculate_risk(request: RiskRequest):
         )
     
     try:
-        # Calculate risk using the fuzzy system
         result = fuzzy_system.calculate_risk(
             current_distance=request.current_distance,
             current_rainfall_mm_per_hour=request.current_rainfall_mm_per_hour
         )
         
-        # Calculate water depth (positive when water rises above ground)
-        # Water depth = ground level - current distance
-        water_depth = fuzzy_system.calibration_height - request.current_distance
-        
-        # Distance to each warning level
+        water_depth = request.current_distance - fuzzy_system.calibration_height
+    
         distance_to_banjir = request.current_distance - fuzzy_system.banjir_level
         distance_to_siaga2 = request.current_distance - (
             (fuzzy_system.siaga_level + fuzzy_system.banjir_level) / 2
         )
         distance_to_siaga1 = request.current_distance - fuzzy_system.siaga_level
         
-        # Determine risk category
-        risk_score = result['risk_score']
-        if risk_score < 25:
-            risk_category = "Sangat Rendah"
-        elif risk_score < 45:
-            risk_category = "Rendah"
-        elif risk_score < 65:
-            risk_category = "Sedang"
-        elif risk_score < 85:
-            risk_category = "Tinggi"
-        else:
-            risk_category = "Sangat Tinggi"
-        
-        # Time to flood estimation (when water is rising)
         avg_rate = result['avg_rate_change_cm_per_min']
         time_to_flood = None
         time_to_siaga2 = None
         time_to_siaga1 = None
         
-        if avg_rate < -0.1:  # Water rising (distance decreasing)
+        if avg_rate > 0.1: 
             if distance_to_banjir > 0:
                 time_to_flood = round(distance_to_banjir / abs(avg_rate), 1)
             if distance_to_siaga2 > 0:
@@ -133,15 +96,13 @@ async def calculate_risk(request: RiskRequest):
             if distance_to_siaga1 > 0:
                 time_to_siaga1 = round(distance_to_siaga1 / abs(avg_rate), 1)
         
-        # Check if system is in recovery (warning level decreasing)
         is_recovery = (
-            result['previous_warning_level'] in ['SIAGA I', 'SIAGA II', 'BANJIR'] and
-            result['warning_level'] == 'NORMAL'
+            result['previous_warning_level'] in ['MODERATE', 'HIGH', 'VERY HIGH'] and
+            result['warning_level'] in ['VERY LOW', 'LOW']
         )
         
-        # Check for rapid changes
-        is_rapid_rise = avg_rate < -5 * fuzzy_system.RATE_FACTOR
-        is_rapid_fall = avg_rate > 5 * fuzzy_system.RATE_FACTOR
+        is_rapid_rise = avg_rate > 5 * fuzzy_system.RATE_FACTOR
+        is_rapid_fall = avg_rate < -5 * fuzzy_system.RATE_FACTOR
         
         return {
             "success": True,
@@ -167,8 +128,8 @@ async def calculate_risk(request: RiskRequest):
                 "is_rapid_fall": is_rapid_fall,
             },
             "risk_assessment": {
-                "risk_score": round(risk_score, 2),
-                "risk_category": risk_category,
+                "risk_score": round(result['risk_score'], 2),
+                "risk_category": result['risk_category'],
                 "warning_level": result['warning_level'],
                 "previous_warning_level": result['previous_warning_level'],
                 "status_message": result['status_message'],
