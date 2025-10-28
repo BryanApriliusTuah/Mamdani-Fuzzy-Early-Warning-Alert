@@ -257,6 +257,7 @@ class DynamicFuzzyFloodWarningSystem:
 			'avg_rate_change_cm_per_min': avg_rate,
 			'current_rainfall_mm_per_hour': current_rainfall_mm_per_hour,
 			'risk_score': round(risk_score, 2),
+			'risk_category': flood_risk_category,
 			'warning_level': warning_level,
 			'previous_warning_level': old_warning,
 			'status_message': self.get_status_message(flood_risk_category, risk_score, avg_rate, current_distance)
