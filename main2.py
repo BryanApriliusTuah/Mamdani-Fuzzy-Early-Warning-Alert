@@ -266,56 +266,52 @@ class DynamicFuzzyFloodWarningSystem:
 		avg_rate = self.calculate_average_rate_change()
 		g = self.RATE_FACTOR
 		
-		if current_distance <= self.banjir_level:
-			base = "BANJIR"
-		elif current_distance <= self.siaga_level:
-			mid = (self.siaga_level + self.banjir_level) / 2
-			base = "SIAGA II" if current_distance <= mid else "SIAGA I"
-		else:
-			base = "NORMAL"
+		flood_risk_data = self.get_flood_risk_categories(risk_score)
+		flood_risk_category = flood_risk_data['dominant_category']
 		
 		if avg_rate > 12 * g:
-			return "BANJIR"
+			return "very high"
 		
-		if base == "BANJIR":
+		if flood_risk_category == 'very high':
 			if avg_rate < -5 * g and current_distance > self.banjir_level + 15:
-				return "SIAGA II"
-			return "BANJIR"
+				return "high"
+			return "very high"
 		
-		if base == "SIAGA II":
-			if current_distance <= self.banjir_level + 8:
-				return "BANJIR"
-			if avg_rate > 1 * g:
-				return "BANJIR"
-			if risk_score >= 70:
-				return "BANJIR"
-			if current_distance <= self.banjir_level + 3 and avg_rate <= 0:
-				return "BANJIR"
-			if avg_rate < -5 * g and risk_score < 30:
-				return "SIAGA I"
-			return "SIAGA II"
-		
-		if base == "SIAGA I":
+		elif flood_risk_category == 'high':
 			if avg_rate > 8 * g:
-				return "BANJIR"
-			if avg_rate > 4 * g or (current_distance <= self.banjir_level + 12 and risk_score >= 60):
-				return "SIAGA II"
-			if avg_rate < -6 * g and risk_score < 25:
-				return "NORMAL"
-			return "SIAGA I"
+				return "very high"
+			if current_distance <= self.banjir_level + 5:
+				return "very high"
+			if avg_rate < -5 * g and risk_score < 40:
+				return "moderate"
+			return "high"
 		
-		if base == "NORMAL":
+		elif flood_risk_category == 'moderate':
 			if avg_rate > 10 * g:
-				return "BANJIR"
-			if avg_rate > 7 * g:
-				return "SIAGA II"
-			if avg_rate > 5 * g:
-				return "SIAGA I"
-			if risk_score >= 75:
-				return "SIAGA I"
-			return "NORMAL"
+				return "very high"
+			if avg_rate > 6 * g:
+				return "high"
+			if avg_rate < -6 * g and risk_score < 25:
+				return "low"
+			return "moderate"
 		
-		return base
+		elif flood_risk_category == 'low':
+			if avg_rate > 10 * g:
+				return "very high"
+			if avg_rate > 7 * g:
+				return "high"
+			if avg_rate > 5 * g:
+				return "moderate"
+			return "low"
+		
+		else:
+			if avg_rate > 10 * g:
+				return "very high"
+			if avg_rate > 7 * g:
+				return "high"
+			if avg_rate > 5 * g:
+				return "moderate"
+			return "very low"
 	
 	def _reset_system(self) -> None:
 		self.distance_history.clear()
