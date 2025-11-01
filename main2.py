@@ -45,12 +45,11 @@ class DynamicFuzzyFloodWarningSystem:
 		flood_risk = ctrl.Consequent(np.arange(0, 101, 1), 'flood_risk', defuzzify_method='centroid')
 		
 		range_span = self.siaga_level - self.banjir_level
-		mid = (self.siaga_level + self.banjir_level) / 2
-		quarter_span = range_span / 4
+		half_range = range_span / 2
 		
 		water_level['normal'] = fuzz.trapmf(water_level.universe, [self.siaga_level, self.siaga_level + 10, max_dist, max_dist])
-		water_level['siaga I'] = fuzz.trimf(water_level.universe, [self.banjir_level + quarter_span, mid + quarter_span/2, self.siaga_level + 5])
-		water_level['siaga II'] = fuzz.trimf(water_level.universe, [self.banjir_level, mid, mid + quarter_span])
+		water_level['siaga I'] = fuzz.trimf(water_level.universe, [self.banjir_level + 5, self.banjir_level + 5 + half_range, self.siaga_level + 5])
+		water_level['siaga II'] = fuzz.trimf(water_level.universe, [self.banjir_level, self.banjir_level + half_range, self.siaga_level])
 		water_level['banjir'] = fuzz.trapmf(water_level.universe, [min_dist, min_dist, self.banjir_level, self.banjir_level + 5])
 	
 		avg_rate_change['turun'] = fuzz.trapmf(avg_rate_change.universe, [-2.36, -2.36, -1.75, -0.3])
@@ -58,7 +57,7 @@ class DynamicFuzzyFloodWarningSystem:
 		avg_rate_change['naik'] = fuzz.trapmf(avg_rate_change.universe, [0.3, 1.75, 2.36, 2.36])		
 		
 		rainfall['tidak_hujan'] = fuzz.trapmf(rainfall.universe, [0, 0, 0.5, 1])
-		rainfall['ringan'] = fuzz.trimf(rainfall.universe, [0.5, 3, 5])
+		rainfall['ringan'] = fuzz.trimf(rainfall.universe, [1, 3, 5])
 		rainfall['sedang'] = fuzz.trimf(rainfall.universe, [5, 7.5, 10])
 		rainfall['lebat'] = fuzz.trimf(rainfall.universe, [10, 15, 20])
 		rainfall['sangat_lebat'] = fuzz.trapmf(rainfall.universe, [20, 20.5, 21, 21])
