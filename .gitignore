@@ -3,3 +3,4 @@ __pycache__
 *.json
 *.txt
 *.png
+.DS_Store
