@@ -27,7 +27,7 @@ class CalibrationRequest(BaseModel):
 
 class RiskRequest(BaseModel):
     current_distance: float = Field(..., ge=0, description="Current distance reading from sensor (cm)")
-    current_rainfall_mm_per_hour: float = Field(0, ge=0, le=21, description="Current rainfall intensity (mm/hour)")
+    current_rainfall_mm_per_hour: float = Field(0, ge=0, le=100, description="Current rainfall intensity (mm/hour)")
 
 
 @app.post("/api/calibrate")
