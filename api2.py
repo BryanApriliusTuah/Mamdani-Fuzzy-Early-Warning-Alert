@@ -25,9 +25,17 @@ class CalibrationRequest(BaseModel):
     banjir_level: Optional[float] = Field(None, gt=0, description="Distance threshold for flood level (cm)")
 
 
+class RainfallHourlyItem(BaseModel):
+    rainfall_mm: float = Field(..., ge=0, description="Rainfall in mm for that hour")
+
+
 class RiskRequest(BaseModel):
     current_distance: float = Field(..., ge=0, description="Current distance reading from sensor (cm)")
-    current_rainfall_mm_per_hour: float = Field(0, ge=0, le=100, description="Current rainfall intensity (mm/hour)")
+    current_rainfall_mm_per_hour: float = Field(0, ge=0, le=100, description="Current real-time rainfall intensity (mm/hour)")
+    rainfall_hourly_data: Optional[list[RainfallHourlyItem]] = Field(
+        None,
+        description="Optional: Last 24 hours of hourly rainfall data. If provided with >= 1 hour of data, moving average is used instead of real-time rainfall."
+    )
 
 
 @app.post("/api/calibrate")
@@ -65,14 +73,20 @@ async def calibrate(request: CalibrationRequest):
 async def calculate_risk(request: RiskRequest):
     if not fuzzy_system.calibration_height:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="System not calibrated. Please call /api/calibrate first"
         )
-    
+
     try:
+        # Convert rainfall hourly data to list of dicts if provided
+        rainfall_hourly = None
+        if request.rainfall_hourly_data:
+            rainfall_hourly = [{'rainfall_mm': item.rainfall_mm} for item in request.rainfall_hourly_data]
+
         result = fuzzy_system.calculate_risk(
             current_distance=request.current_distance,
-            current_rainfall_mm_per_hour=request.current_rainfall_mm_per_hour
+            current_rainfall_mm_per_hour=request.current_rainfall_mm_per_hour,
+            rainfall_hourly_data=rainfall_hourly
         )
         
         water_depth = request.current_distance - fuzzy_system.calibration_height
@@ -115,7 +129,14 @@ async def calculate_risk(request: RiskRequest):
                 "current_distance_cm": round(result['current_distance'], 2),
                 "water_depth_from_ground_cm": round(water_depth, 2),
                 "current_rainfall_mm_per_hour": request.current_rainfall_mm_per_hour,
+                "effective_rainfall_mm_per_hour": round(result.get('effective_rainfall_mm_per_hour', request.current_rainfall_mm_per_hour), 2),
             },
+            "rainfall_info": result.get('rainfall_info', {
+                'method': 'realtime',
+                'hours_in_average': 0,
+                'current_rainfall': request.current_rainfall_mm_per_hour,
+                'moving_average': None
+            }),
             "water_level_status": {
                 "distance_to_banjir_cm": round(distance_to_banjir, 2),
                 "distance_to_siaga2_cm": round(distance_to_siaga2, 2),

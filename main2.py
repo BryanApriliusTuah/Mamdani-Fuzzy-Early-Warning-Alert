@@ -6,9 +6,9 @@ from typing import Dict, Optional
 
 
 class DynamicFuzzyFloodWarningSystem:
-	
+
 	RATE_FACTOR = 0.67
-	
+
 	def __init__(self, reading_interval_seconds: int = 1):
 		self.calibration_height = None
 		self.siaga_level = None
@@ -18,6 +18,51 @@ class DynamicFuzzyFloodWarningSystem:
 		self.reading_interval_seconds = reading_interval_seconds
 		self.distance_history = deque(maxlen=60)
 		self.reading_count = 0
+		self.rainfall_history_24h: list = []  # Store 24 hours of rainfall data from database
+
+	def get_effective_rainfall(self, current_rainfall: float, rainfall_hourly_data: list = None) -> Dict[str, any]:
+		"""
+		Determine effective rainfall for risk calculation.
+
+		Logic:
+		- If rainfall_hourly_data has >= 1 record (>= 1 hour of data), use moving average
+		- Otherwise, use current real-time rainfall
+
+		Args:
+			current_rainfall: Real-time rainfall reading (mm/hour)
+			rainfall_hourly_data: List of hourly rainfall records from last 24 hours
+			                     Each item should have 'rainfall_mm' value
+
+		Returns:
+			Dict with effective_rainfall, method_used, and moving_average_hours
+		"""
+		if rainfall_hourly_data is not None:
+			self.rainfall_history_24h = rainfall_hourly_data
+
+		# Check if we have at least 1 hour of historical data
+		if len(self.rainfall_history_24h) >= 1:
+			# Calculate moving average from historical data
+			total_rainfall = sum(r if isinstance(r, (int, float)) else r.get('rainfall_mm', 0)
+			                     for r in self.rainfall_history_24h)
+			hours_count = len(self.rainfall_history_24h)
+			moving_avg = total_rainfall / hours_count
+
+			return {
+				'effective_rainfall': moving_avg,
+				'method': 'moving_average_24h',
+				'hours_in_average': hours_count,
+				'current_rainfall': current_rainfall,
+				'moving_average': moving_avg
+			}
+		else:
+			# Use real-time rainfall (less than 1 hour of data)
+			return {
+				'effective_rainfall': current_rainfall,
+				'method': 'realtime',
+				'hours_in_average': 0,
+				'current_rainfall': current_rainfall,
+				'moving_average': None
+			}
 	
 	def calibrate(self, ground_distance: float, 
 				  siaga_level_override: Optional[float] = None, 
@@ -213,48 +258,68 @@ class DynamicFuzzyFloodWarningSystem:
 		
 		return min(100, total_risk)
 	
-	def calculate_risk(self, current_distance: float, 
-					   current_rainfall_mm_per_hour: float = 0) -> Dict[str, any]:
+	def calculate_risk(self, current_distance: float,
+					   current_rainfall_mm_per_hour: float = 0,
+					   rainfall_hourly_data: list = None) -> Dict[str, any]:
+		"""
+		Calculate flood risk using fuzzy logic.
+
+		Args:
+			current_distance: Current sensor distance reading (cm)
+			current_rainfall_mm_per_hour: Real-time rainfall intensity (mm/hour)
+			rainfall_hourly_data: Optional list of hourly rainfall from last 24 hours.
+			                     If provided and has >= 1 hour of data, moving average is used.
+			                     Otherwise, uses current_rainfall_mm_per_hour.
+
+		Returns:
+			Dict with risk assessment results including rainfall_info
+		"""
 		if self.calibration_height is None:
 			raise ValueError("System not calibrated")
 		if current_distance < 0:
 			raise ValueError("Distance cannot be negative")
 		if current_rainfall_mm_per_hour < 0:
 			raise ValueError("Rainfall cannot be negative")
-		
+
 		self.add_distance_reading(current_distance)
 		avg_rate = self.calculate_average_rate_change()
 		g = self.RATE_FACTOR
-		
+
+		# Get effective rainfall (moving average or real-time)
+		rainfall_info = self.get_effective_rainfall(current_rainfall_mm_per_hour, rainfall_hourly_data)
+		effective_rainfall = rainfall_info['effective_rainfall']
+
 		rate_override = 0
 		if avg_rate > 2 * g:
 			rate_override = 25
 		elif avg_rate > 1.5 * g:
 			rate_override = 12
-		
+
 		self.fuzzy_system.input['water_level'] = current_distance
 		self.fuzzy_system.input['avg_rate_change'] = avg_rate
-		self.fuzzy_system.input['rainfall'] = current_rainfall_mm_per_hour
-		
+		self.fuzzy_system.input['rainfall'] = effective_rainfall
+
 		try:
 			self.fuzzy_system.compute()
 			risk_score = min(100, self.fuzzy_system.output['flood_risk'] + rate_override)
 		except:
 			risk_score = self._calculate_fallback_risk(
-				current_distance, avg_rate, current_rainfall_mm_per_hour, rate_override
+				current_distance, avg_rate, effective_rainfall, rate_override
 			)
-		
-		warning_level = self._determine_warning_level(risk_score, current_distance, current_rainfall_mm_per_hour)
+
+		warning_level = self._determine_warning_level(risk_score, current_distance, effective_rainfall)
 		old_warning = self.previous_warning_level
 		self.previous_warning_level = warning_level
 		flood_risk_category = self.get_flood_risk_categories(risk_score)['dominant_category']
-		
+
 		return {
 			'reading_number': self.reading_count,
 			'current_distance': current_distance,
 			'rate_change_cm_per_sec': avg_rate / 60.0,
 			'avg_rate_change_cm_per_min': avg_rate,
 			'current_rainfall_mm_per_hour': current_rainfall_mm_per_hour,
+			'effective_rainfall_mm_per_hour': effective_rainfall,
+			'rainfall_info': rainfall_info,
 			'risk_score': round(risk_score, 2),
 			'risk_category': flood_risk_category,
 			'warning_level': warning_level,
