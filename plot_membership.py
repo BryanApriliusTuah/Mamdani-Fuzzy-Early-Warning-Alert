@@ -88,8 +88,8 @@ def plot_single_membership(system, variable_name, save_path=None):
 	if variable_name == 'water_level':
 		plt.axvline(x=system.siaga_level, color='orange', linestyle='--', linewidth=2, label=f'Siaga ({system.siaga_level}cm)')
 		plt.axvline(x=system.banjir_level, color='red', linestyle='--', linewidth=2, label=f'Banjir ({system.banjir_level}cm)')
-		plt.xlabel('Elevasi Air (cm)', fontsize=12)
-		plt.title('Keanggotaan Elevasi Air', fontsize=14, fontweight='bold')
+		plt.xlabel('Jarak sensor terhadap muka air (cm)', fontsize=12)
+		plt.title('Keanggotaan Level Air', fontsize=14, fontweight='bold')
 	elif variable_name == 'avg_rate_change':
 		plt.axvline(x=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
 		plt.axvline(x=0.67, color='green', linestyle=':', linewidth=2, alpha=0.7, label='(±0.67 cm/min)')
